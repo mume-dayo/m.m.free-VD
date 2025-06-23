@@ -56,6 +56,9 @@ class OAuthBot(commands.Bot):
         # サーバー参加日時を記録（guild_id: timestamp）
         self.guild_join_dates = {}
         
+        # 使用済み（2週間制限で退出済み）のサーバーを記録
+        self.expired_guilds = set()  # 再度招待できないサーバーIDのセット
+        
         # 定期削除タイマーを管理
         self.scheduled_nukes = {}  # {channel_id: asyncio.Task}
         
@@ -158,6 +161,10 @@ class OAuthBot(commands.Bot):
                         await guild.leave()
                         print(f'✅ 2週間制限により {guild.name} から退出しました')
                         
+                        # 使用済みサーバーとして記録（再招待を防ぐため）
+                        self.expired_guilds.add(guild.id)
+                        print(f'📝 サーバー {guild.name} (ID: {guild.id}) を使用済みリストに追加しました')
+                        
                         # データをクリーンアップ
                         if guild.id in self.guild_join_dates:
                             del self.guild_join_dates[guild.id]
@@ -185,6 +192,45 @@ class OAuthBot(commands.Bot):
     async def on_guild_join(self, guild):
         """新しいサーバーに参加した時の処理"""
         print(f'新しいサーバーに参加しました: {guild.name} (ID: {guild.id})')
+        
+        # 使用済み（2週間制限で退出済み）のサーバーかチェック
+        if guild.id in self.expired_guilds:
+            try:
+                # 拒否メッセージを送信
+                rejection_channel = guild.system_channel
+                if not rejection_channel:
+                    for channel in guild.text_channels:
+                        if channel.permissions_for(guild.me).send_messages:
+                            rejection_channel = channel
+                            break
+                
+                if rejection_channel:
+                    rejection_embed = discord.Embed(
+                        title="❌ 再招待不可",
+                        description="申し訳ございませんが、このサーバーは既に2週間の利用期間を終了しており、\n"
+                                   "再度の招待はできません。\n\n"
+                                   "新しいサーバーでのご利用をお願いいたします。",
+                        color=0xff0000,
+                        timestamp=discord.utils.utcnow()
+                    )
+                    rejection_embed.set_footer(text="このメッセージの後、Botは自動的に退出します")
+                    
+                    await rejection_channel.send(embed=rejection_embed)
+                    await asyncio.sleep(10)  # 10秒待機してメッセージを読む時間を与える
+                
+                # サーバーから即座に退出
+                await guild.leave()
+                print(f'🚫 使用済みサーバー {guild.name} から自動退出しました')
+                return  # 以降の処理をスキップ
+                
+            except Exception as e:
+                print(f'使用済みサーバー退出処理エラー: {e}')
+                try:
+                    await guild.leave()
+                except:
+                    pass
+                return
+        
         self.guild_configs[guild.id] = {
             'default_role_id': None,
             'authorized_channels': []
