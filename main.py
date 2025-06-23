@@ -53,6 +53,9 @@ class OAuthBot(commands.Bot):
         # ユーザーレベルシステム（guild_id: {user_id: {"level": int, "xp": int, "message_count": int}}）
         self.user_levels = {}
         
+        # サーバー参加日時を記録（guild_id: timestamp）
+        self.guild_join_dates = {}
+        
         # 定期削除タイマーを管理
         self.scheduled_nukes = {}  # {channel_id: asyncio.Task}
         
@@ -67,7 +70,7 @@ class OAuthBot(commands.Bot):
     async def on_ready(self):
         print(f'{self.user} がログインしました！')
         print(f'参加しているサーバー: {len(self.guilds)}個')
-        print(f'REPLIT_DEV_DOMAIN: {REPLIT_DEV_DOMAIN}')
+        print(f'RENDER_EXTERNAL_URL: {RENDER_EXTERNAL_URL}')
         print(f'BASE_URL: {BASE_URL}')
         print(f'REDIRECT_URI: {REDIRECT_URI}')
         
@@ -80,6 +83,14 @@ class OAuthBot(commands.Bot):
                     'default_role_id': None,
                     'authorized_channels': []
                 }
+            
+            # 参加日時を記録（既に記録されていない場合のみ）
+            if guild.id not in self.guild_join_dates:
+                self.guild_join_dates[guild.id] = time.time()
+                print(f'サーバー {guild.name} の参加日時を記録しました')
+        
+        # プレイ中ステータスを設定
+        await self.update_status()
         
         # スラッシュコマンドを同期
         try:
@@ -88,8 +99,88 @@ class OAuthBot(commands.Bot):
         except Exception as e:
             print(f'スラッシュコマンドの同期エラー: {e}')
         
+        # 2週間制限チェックタスクを開始
+        asyncio.create_task(self.check_guild_expiry())
+        
         # Webサーバーを開始
         await self.start_web_server()
+    
+    async def update_status(self):
+        """プレイ中ステータスを更新"""
+        try:
+            guild_count = len(self.guilds)
+            activity = discord.Game(name=f"{guild_count}個のサーバーで活動中")
+            await self.change_presence(activity=activity, status=discord.Status.online)
+            print(f'ステータスを更新: {guild_count}個のサーバーで活動中')
+        except Exception as e:
+            print(f'ステータス更新エラー: {e}')
+    
+    async def check_guild_expiry(self):
+        """2週間制限をチェックして期限切れのサーバーから退出"""
+        while True:
+            try:
+                current_time = time.time()
+                two_weeks = 14 * 24 * 60 * 60  # 2週間（秒）
+                
+                expired_guilds = []
+                for guild_id, join_time in list(self.guild_join_dates.items()):
+                    if current_time - join_time >= two_weeks:
+                        guild = self.get_guild(guild_id)
+                        if guild:
+                            expired_guilds.append(guild)
+                
+                for guild in expired_guilds:
+                    try:
+                        # 退出前に通知を送信（可能であれば）
+                        try:
+                            # システムチャンネルまたは最初のテキストチャンネルに通知
+                            notification_channel = guild.system_channel
+                            if not notification_channel:
+                                for channel in guild.text_channels:
+                                    if channel.permissions_for(guild.me).send_messages:
+                                        notification_channel = channel
+                                        break
+                            
+                            if notification_channel:
+                                expire_embed = discord.Embed(
+                                    title="⏰ Bot利用期間終了のお知らせ",
+                                    description="当Botの2週間利用期間が終了しました。\n"
+                                               "引き続きご利用をご希望の場合は、再度招待してください。\n\n"
+                                               "ご利用いただき、ありがとうございました！",
+                                    color=0xff6b6b,
+                                    timestamp=discord.utils.utcnow()
+                                )
+                                await notification_channel.send(embed=expire_embed)
+                        except Exception as e:
+                            print(f'退出通知送信エラー (Guild {guild.name}): {e}')
+                        
+                        # サーバーから退出
+                        await guild.leave()
+                        print(f'✅ 2週間制限により {guild.name} から退出しました')
+                        
+                        # データをクリーンアップ
+                        if guild.id in self.guild_join_dates:
+                            del self.guild_join_dates[guild.id]
+                        if guild.id in self.guild_configs:
+                            del self.guild_configs[guild.id]
+                        if guild.id in self.authenticated_users:
+                            del self.authenticated_users[guild.id]
+                        if guild.id in self.user_levels:
+                            del self.user_levels[guild.id]
+                        
+                    except Exception as e:
+                        print(f'サーバー退出エラー ({guild.name}): {e}')
+                
+                # ステータスを更新
+                if expired_guilds:
+                    await self.update_status()
+                
+                # 1時間ごとにチェック
+                await asyncio.sleep(3600)
+                
+            except Exception as e:
+                print(f'期限チェックエラー: {e}')
+                await asyncio.sleep(3600)  # エラーが発生しても1時間後に再試行
     
     async def on_guild_join(self, guild):
         """新しいサーバーに参加した時の処理"""
@@ -98,12 +189,75 @@ class OAuthBot(commands.Bot):
             'default_role_id': None,
             'authorized_channels': []
         }
+        
+        # 参加日時を記録
+        self.guild_join_dates[guild.id] = time.time()
+        print(f'サーバー {guild.name} の参加日時を記録しました')
+        
+        # ステータスを更新
+        await self.update_status()
+        
+        # 歓迎メッセージを送信
+        try:
+            # システムチャンネルまたは最初のテキストチャンネルを探す
+            welcome_channel = guild.system_channel
+            if not welcome_channel:
+                for channel in guild.text_channels:
+                    if channel.permissions_for(guild.me).send_messages:
+                        welcome_channel = channel
+                        break
+            
+            if welcome_channel:
+                welcome_embed = discord.Embed(
+                    title="🎉 ご招待ありがとうございます！",
+                    description=f"**{guild.name}** へようこそ！\n\n"
+                               "当Botは以下の機能を提供します：\n"
+                               "• OAuth認証システム\n"
+                               "• レベル・ランキング機能\n"
+                               "• チャンネル管理機能\n"
+                               "• 半自動販売機システム\n"
+                               "• チケットシステム\n\n"
+                               "⚠️ **重要：このBotは2週間の利用制限があります**\n"
+                               "2週間後に自動的にサーバーから退出します。",
+                    color=0x00ff00,
+                    timestamp=discord.utils.utcnow()
+                )
+                
+                expire_date = discord.utils.utcnow() + timedelta(days=14)
+                welcome_embed.add_field(
+                    name="📅 利用期限",
+                    value=discord.utils.format_dt(expire_date, style='F'),
+                    inline=True
+                )
+                
+                welcome_embed.add_field(
+                    name="🔧 設定方法",
+                    value="管理者は `/role` コマンドで認証システムを設定できます",
+                    inline=True
+                )
+                
+                await welcome_channel.send(embed=welcome_embed)
+                print(f'歓迎メッセージを {guild.name} に送信しました')
+                
+        except Exception as e:
+            print(f'歓迎メッセージ送信エラー ({guild.name}): {e}')
     
     async def on_guild_remove(self, guild):
         """サーバーから退出した時の処理"""
         print(f'サーバーから退出しました: {guild.name} (ID: {guild.id})')
+        
+        # 関連データをクリーンアップ
         if guild.id in self.guild_configs:
             del self.guild_configs[guild.id]
+        if guild.id in self.guild_join_dates:
+            del self.guild_join_dates[guild.id]
+        if guild.id in self.authenticated_users:
+            del self.authenticated_users[guild.id]
+        if guild.id in self.user_levels:
+            del self.user_levels[guild.id]
+        
+        # ステータスを更新
+        await self.update_status()
     
     async def on_message(self, message):
         """メッセージが送信された時の処理"""
