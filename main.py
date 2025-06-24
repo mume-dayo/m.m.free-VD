@@ -62,13 +62,8 @@ class OAuthBot(commands.Bot):
         # 定期削除タイマーを管理
         self.scheduled_nukes = {}  # {channel_id: asyncio.Task}
         
-        # 半自動販売機システム
-        self.vending_machine = {
-            'products': {},  # {product_id: {'name': str, 'price': int, 'description': str, 'stock': int}}
-            'orders': {},    # {order_id: {'user_id': str, 'product_id': str, 'status': str, 'channel_id': int}}
-            'admin_channels': set(),  # 管理者チャンネルのIDセット
-            'next_order_id': 1
-        }
+        # 半自動販売機システム（サーバーごと）
+        self.vending_machines = {}  # {guild_id: {'products': {}, 'orders': {}, 'admin_channels': set(), 'next_order_id': 1}}
     
     async def on_ready(self):
         print(f'{self.user} がログインしました！')
@@ -301,6 +296,8 @@ class OAuthBot(commands.Bot):
             del self.authenticated_users[guild.id]
         if guild.id in self.user_levels:
             del self.user_levels[guild.id]
+        if guild.id in self.vending_machines:
+            del self.vending_machines[guild.id]
         
         # ステータスを更新
         await self.update_status()
@@ -355,6 +352,18 @@ class OAuthBot(commands.Bot):
     def set_guild_config(self, guild_id, config):
         """サーバーの設定を保存"""
         self.guild_configs[guild_id] = config
+    
+    def get_guild_vending_machine(self, guild_id):
+        """サーバーの販売機データを取得（存在しない場合は初期化）"""
+        if guild_id not in self.vending_machines:
+            self.vending_machines[guild_id] = {
+                'products': {},  # {product_id: {'name': str, 'price': int, 'description': str, 'stock': int, 'inventory': [str]}}
+                'orders': {},    # {order_id: {'user_id': str, 'product_id': str, 'status': str, 'channel_id': int}}
+                'admin_channels': set(),  # 管理者チャンネルのIDセット
+                'achievement_channel': None,  # 実績チャンネルのID
+                'next_order_id': 1
+            }
+        return self.vending_machines[guild_id]
     
     
     
@@ -853,6 +862,134 @@ class OAuthBot(commands.Bot):
             if channel.id in self.scheduled_nukes:
                 del self.scheduled_nukes[channel.id]
 
+def parse_giveaway_duration(duration_str):
+    """ギブアウェイの期限文字列（1w2d3h30m形式）を秒数に変換"""
+    import re
+    
+    # 正規表現パターン（週、日、時間、分）
+    pattern = r'(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?'
+    match = re.match(pattern, duration_str.lower())
+    
+    if not match:
+        return None
+    
+    weeks, days, hours, minutes = match.groups()
+    
+    total_seconds = 0
+    if weeks:
+        total_seconds += int(weeks) * 604800  # 1週間 = 604800秒
+    if days:
+        total_seconds += int(days) * 86400    # 1日 = 86400秒
+    if hours:
+        total_seconds += int(hours) * 3600    # 1時間 = 3600秒
+    if minutes:
+        total_seconds += int(minutes) * 60    # 1分 = 60秒
+    
+    return total_seconds if total_seconds > 0 else None
+
+def format_duration(seconds):
+    """秒数を読みやすい期限形式に変換"""
+    weeks = seconds // 604800
+    days = (seconds % 604800) // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    
+    parts = []
+    if weeks > 0:
+        parts.append(f"{weeks}週間")
+    if days > 0:
+        parts.append(f"{days}日")
+    if hours > 0:
+        parts.append(f"{hours}時間")
+    if minutes > 0:
+        parts.append(f"{minutes}分")
+    
+    return "".join(parts) if parts else "0分"
+
+async def end_giveaway_task(channel, giveaway_view, prize, winners, end_time, host):
+    """ギブアウェイ終了タスク"""
+    try:
+        # 終了時刻まで待機
+        now = discord.utils.utcnow()
+        if end_time > now:
+            wait_seconds = (end_time - now).total_seconds()
+            await asyncio.sleep(wait_seconds)
+        
+        # 参加者から抽選
+        participants = list(giveaway_view.participants)
+        
+        if len(participants) == 0:
+            # 参加者がいない場合
+            no_participants_embed = discord.Embed(
+                title="🎉 ギブアウェイ終了",
+                description=f"**景品:** {prize}\n\n"
+                           f"❌ 参加者がいませんでした。\n"
+                           f"ギブアウェイは無効となります。",
+                color=0x95a5a6,
+                timestamp=discord.utils.utcnow()
+            )
+            no_participants_embed.set_footer(
+                text=f"主催者: {host.display_name}",
+                icon_url=host.display_avatar.url
+            )
+            
+            await channel.send(embed=no_participants_embed)
+            return
+        
+        # 勝者を抽選
+        actual_winners = min(winners, len(participants))
+        winner_ids = random.sample(participants, actual_winners)
+        
+        # 勝者の情報を取得
+        winner_mentions = []
+        for winner_id in winner_ids:
+            try:
+                member = channel.guild.get_member(winner_id)
+                if member:
+                    winner_mentions.append(member.mention)
+                else:
+                    # メンバーが見つからない場合はフェッチを試行
+                    try:
+                        member = await channel.guild.fetch_member(winner_id)
+                        winner_mentions.append(member.mention)
+                    except:
+                        winner_mentions.append(f"<@{winner_id}>")
+            except:
+                winner_mentions.append(f"<@{winner_id}>")
+        
+        # 結果のEmbedを作成
+        result_embed = discord.Embed(
+            title="🎉 ギブアウェイ終了！",
+            description=f"**景品:** {prize}\n\n"
+                       f"🏆 **勝者（{actual_winners}人）:**\n" + "\n".join(winner_mentions) + "\n\n"
+                       f"おめでとうございます！🎊",
+            color=0x00ff00,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        result_embed.add_field(
+            name="📊 参加統計",
+            value=f"総参加者数: {len(participants)}人\n"
+                 f"当選確率: {(actual_winners/len(participants)*100):.1f}%",
+            inline=True
+        )
+        
+        result_embed.set_footer(
+            text=f"主催者: {host.display_name}",
+            icon_url=host.display_avatar.url
+        )
+        
+        # 勝者にメンション
+        winner_mentions_str = " ".join(winner_mentions)
+        await channel.send(content=f"🎉 {winner_mentions_str}", embed=result_embed)
+        
+        print(f'ギブアウェイ「{prize}」が終了しました。勝者: {len(winner_ids)}人、参加者: {len(participants)}人')
+        
+    except asyncio.CancelledError:
+        print(f'ギブアウェイ「{prize}」がキャンセルされました')
+    except Exception as e:
+        print(f'ギブアウェイ終了エラー: {e}')
+
 # ボットコマンド
 bot = OAuthBot()
 
@@ -1254,99 +1391,42 @@ async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name='log', description='サーバーログを別のサーバーに転送します')
+@bot.tree.command(name='log', description='指定したチャンネルにユーザーになりきってメッセージを送信します')
 @app_commands.describe(
-    webhook_url='ログ送信先のウェブフックURL',
-    message='送信するメッセージ',
-    username='送信者として表示する名前（省略可）',
-    avatar_url='送信者のアバターURL（省略可）'
+    channel='メッセージを送信するチャンネル',
+    message='送信するメッセージ'
 )
 @app_commands.default_permissions(administrator=True)
 async def log_slash(
     interaction: discord.Interaction,
-    webhook_url: str,
-    message: str,
-    username: str = None,
-    avatar_url: str = None
+    channel: discord.TextChannel,
+    message: str
 ):
-    """ウェブフックを使用してサーバーログを別のサーバーに送信"""
-    
-    await interaction.response.defer(ephemeral=True)
+    """指定したチャンネルにユーザーになりきってメッセージを送信"""
     
     try:
-        # 現在のサーバー情報を取得
-        current_guild = interaction.guild
         current_user = interaction.user
-        current_time = discord.utils.utcnow()
         
-        # ログメッセージの準備
-        log_embed = discord.Embed(
-            title="📋 サーバーログ",
-            color=0x3498db,
-            timestamp=current_time
+        # 指定したチャンネルにメッセージを送信（ユーザーになりきって）
+        await channel.send(message)
+        
+        # 実行者に確認メッセージを送信
+        await interaction.response.send_message(
+            f"✅ {channel.mention} にメッセージを送信しました！\n"
+            f"送信内容: {message[:100]}{'...' if len(message) > 100 else ''}",
+            ephemeral=True
         )
         
-        log_embed.add_field(
-            name="送信者",
-            value=f"{current_user.display_name} ({current_user.name})",
-            inline=True
-        )
-        
-        log_embed.add_field(
-            name="サーバー",
-            value=f"{current_guild.name} (ID: {current_guild.id})",
-            inline=True
-        )
-        
-        log_embed.add_field(
-            name="チャンネル",
-            value=f"#{interaction.channel.name}",
-            inline=True
-        )
-        
-        log_embed.add_field(
-            name="メッセージ",
-            value=message,
-            inline=False
-        )
-        
-        # ウェブフックデータの準備
-        webhook_data = {
-            "embeds": [log_embed.to_dict()]
-        }
-        
-        # カスタムユーザー名とアバターが指定されている場合
-        if username:
-            webhook_data["username"] = username
-        else:
-            webhook_data["username"] = f"{current_user.display_name} (via {current_guild.name})"
-            
-        if avatar_url:
-            webhook_data["avatar_url"] = avatar_url
-        elif current_user.avatar:
-            webhook_data["avatar_url"] = current_user.avatar.url
-        
-        # ウェブフックでメッセージを送信
-        async with aiohttp.ClientSession() as session:
-            async with session.post(webhook_url, json=webhook_data) as response:
-                if response.status in [200, 204]:
-                    await interaction.followup.send(
-                        "✅ ログが正常に送信されました！",
-                        ephemeral=True
-                    )
-                    print(f"📤 {current_user.name} がサーバーログを送信しました: {message[:50]}...")
-                else:
-                    error_text = await response.text()
-                    await interaction.followup.send(
-                        f"❌ ログの送信に失敗しました。ステータスコード: {response.status}\n"
-                        f"エラー: {error_text[:200]}",
-                        ephemeral=True
-                    )
-                    print(f"❌ ウェブフック送信エラー ({response.status}): {error_text}")
+        print(f"📤 {current_user.name} が {channel.name} にメッセージを送信しました: {message[:50]}...")
                     
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            f"❌ {channel.mention} への送信権限がありません。",
+            ephemeral=True
+        )
     except Exception as e:
-        await interaction.followup.send(
-            f"❌ ログ送信中にエラーが発生しました: {str(e)}",
+        await interaction.response.send_message(
+            f"❌ メッセージ送信中にエラーが発生しました: {str(e)}",
             ephemeral=True
         )
         print(f"❌ Log command error: {e}")
@@ -1598,16 +1678,18 @@ async def delete_slash(interaction: discord.Interaction, amount: int, member: di
 @app_commands.default_permissions(administrator=True)
 async def vending_setup_slash(interaction: discord.Interaction):
     """販売機の管理者チャンネルを設定"""
+    guild_id = interaction.guild.id
     channel_id = interaction.channel.id
+    vending_machine = bot.get_guild_vending_machine(guild_id)
     
-    if channel_id in bot.vending_machine['admin_channels']:
+    if channel_id in vending_machine['admin_channels']:
         await interaction.response.send_message(
             "❌ このチャンネルは既に管理者チャンネルとして設定されています。",
             ephemeral=True
         )
         return
     
-    bot.vending_machine['admin_channels'].add(channel_id)
+    vending_machine['admin_channels'].add(channel_id)
     
     setup_embed = discord.Embed(
         title="⚙️ 販売機管理者チャンネル設定完了",
@@ -1659,11 +1741,15 @@ async def add_product_slash(
         )
         return
     
-    bot.vending_machine['products'][product_id] = {
+    guild_id = interaction.guild.id
+    vending_machine = bot.get_guild_vending_machine(guild_id)
+    
+    vending_machine['products'][product_id] = {
         'name': name,
         'price': price,
         'description': description,
-        'stock': stock
+        'stock': stock,
+        'inventory': []  # 事前に追加された在庫アイテムのリスト
     }
     
     product_embed = discord.Embed(
@@ -1676,24 +1762,134 @@ async def add_product_slash(
     product_embed.add_field(name="価格", value=f"¥{price:,}", inline=True)
     product_embed.add_field(name="在庫", value=f"{stock}個", inline=True)
     product_embed.add_field(name="説明", value=description, inline=False)
+    product_embed.add_field(
+        name="📦 次のステップ", 
+        value=f"`/add_inventory {product_id}` で在庫アイテムを追加してください", 
+        inline=False
+    )
     
     await interaction.response.send_message(embed=product_embed)
     print(f'{interaction.user.name} が商品「{name}」を販売機に追加しました')
 
-@bot.tree.command(name='vending_panel', description='販売機パネルを設置します')
+@bot.tree.command(name='add_inventory', description='商品に在庫アイテムを追加します')
+@app_commands.describe(
+    product_id='商品ID',
+    item_content='在庫アイテムの内容（購入時にDMで送信される内容）'
+)
 @app_commands.default_permissions(administrator=True)
-async def vending_panel_slash(interaction: discord.Interaction):
+async def add_inventory_slash(
+    interaction: discord.Interaction,
+    product_id: str,
+    item_content: str
+):
+    """商品に在庫アイテムを追加"""
+    guild_id = interaction.guild.id
+    vending_machine = bot.get_guild_vending_machine(guild_id)
+    
+    if product_id not in vending_machine['products']:
+        await interaction.response.send_message(
+            f"❌ 商品ID「{product_id}」が見つかりません。",
+            ephemeral=True
+        )
+        return
+    
+    product = vending_machine['products'][product_id]
+    
+    # 在庫アイテムを追加
+    if 'inventory' not in product:
+        product['inventory'] = []
+    
+    product['inventory'].append(item_content)
+    product['stock'] = len(product['inventory'])  # 在庫数を実際のアイテム数に更新
+    
+    inventory_embed = discord.Embed(
+        title="✅ 在庫アイテム追加完了",
+        description=f"商品「{product['name']}」に在庫アイテムを追加しました。",
+        color=0x00ff00
+    )
+    
+    inventory_embed.add_field(name="商品ID", value=product_id, inline=True)
+    inventory_embed.add_field(name="現在の在庫数", value=f"{product['stock']}個", inline=True)
+    inventory_embed.add_field(name="追加された内容", value=item_content[:100] + ("..." if len(item_content) > 100 else ""), inline=False)
+    
+    await interaction.response.send_message(embed=inventory_embed)
+    print(f'{interaction.user.name} が商品「{product["name"]}」に在庫アイテムを追加しました')
+
+@bot.tree.command(name='view_inventory', description='商品の在庫アイテム一覧を表示します')
+@app_commands.describe(product_id='商品ID')
+@app_commands.default_permissions(administrator=True)
+async def view_inventory_slash(interaction: discord.Interaction, product_id: str):
+    """商品の在庫アイテム一覧を表示"""
+    guild_id = interaction.guild.id
+    vending_machine = bot.get_guild_vending_machine(guild_id)
+    
+    if product_id not in vending_machine['products']:
+        await interaction.response.send_message(
+            f"❌ 商品ID「{product_id}」が見つかりません。",
+            ephemeral=True
+        )
+        return
+    
+    product = vending_machine['products'][product_id]
+    inventory = product.get('inventory', [])
+    
+    if not inventory:
+        await interaction.response.send_message(
+            f"📦 商品「{product['name']}」には在庫アイテムがありません。",
+            ephemeral=True
+        )
+        return
+    
+    inventory_embed = discord.Embed(
+        title=f"📦 在庫アイテム一覧 - {product['name']}",
+        description=f"商品ID: {product_id}\n在庫数: {len(inventory)}個",
+        color=0x3498db
+    )
+    
+    for i, item in enumerate(inventory, 1):
+        inventory_embed.add_field(
+            name=f"在庫アイテム #{i}",
+            value=item[:100] + ("..." if len(item) > 100 else ""),
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=inventory_embed, ephemeral=True)
+
+@bot.tree.command(name='vending_panel', description='販売機パネルを設置します')
+@app_commands.describe(
+    admin_channel='管理者チャンネル（省略した場合は既存の設定を使用）',
+    achievement_channel='実績チャンネル（購入実績を自動送信、省略可）'
+)
+@app_commands.default_permissions(administrator=True)
+async def vending_panel_slash(
+    interaction: discord.Interaction, 
+    admin_channel: discord.TextChannel = None,
+    achievement_channel: discord.TextChannel = None
+):
     """販売機パネルを設置"""
-    if not bot.vending_machine['products']:
+    guild_id = interaction.guild.id
+    vending_machine = bot.get_guild_vending_machine(guild_id)
+    
+    if not vending_machine['products']:
         await interaction.response.send_message(
             "❌ 販売する商品がありません。先に `/add_product` で商品を追加してください。",
             ephemeral=True
         )
         return
     
-    if not bot.vending_machine['admin_channels']:
+    # 管理者チャンネルが指定された場合は追加
+    if admin_channel:
+        vending_machine['admin_channels'].add(admin_channel.id)
+        print(f'{interaction.user.name} がチャンネル {admin_channel.name} を販売機管理者チャンネルに設定しました')
+    
+    # 実績チャンネルが指定された場合は設定
+    if achievement_channel:
+        vending_machine['achievement_channel'] = achievement_channel.id
+        print(f'{interaction.user.name} がチャンネル {achievement_channel.name} を実績チャンネルに設定しました')
+    
+    if not vending_machine['admin_channels']:
         await interaction.response.send_message(
-            "❌ 管理者チャンネルが設定されていません。先に `/vending_setup` で設定してください。",
+            "❌ 管理者チャンネルが設定されていません。`admin_channel`パラメータでチャンネルを指定するか、先に `/vending_setup` で設定してください。",
             ephemeral=True
         )
         return
@@ -1707,8 +1903,9 @@ async def vending_panel_slash(interaction: discord.Interaction):
     
     # 商品一覧を表示
     product_list = ""
-    for product_id, product in bot.vending_machine['products'].items():
-        stock_status = f"在庫: {product['stock']}個" if product['stock'] > 0 else "❌ 在庫切れ"
+    for product_id, product in vending_machine['products'].items():
+        actual_stock = len(product.get('inventory', []))
+        stock_status = f"在庫: {actual_stock}個" if actual_stock > 0 else "❌ 在庫切れ"
         product_list += f"**{product['name']}** - ¥{product['price']:,}\n{product['description']}\n{stock_status}\n\n"
     
     panel_embed.add_field(
@@ -1719,9 +1916,207 @@ async def vending_panel_slash(interaction: discord.Interaction):
     
     panel_embed.set_footer(text="購入には PayPay での支払いが必要です")
     
-    view = VendingMachineView()
+    # 実績チャンネルが設定されている場合の表示
+    if achievement_channel:
+        panel_embed.add_field(
+            name="🏆 実績チャンネル", 
+            value=f"購入実績が {achievement_channel.mention} に自動送信されます",
+            inline=False
+        )
+    
+    view = VendingMachineView(guild_id)
     await interaction.response.send_message(embed=panel_embed, view=view)
     print(f'{interaction.user.name} が販売機パネルを設置しました')
+
+@bot.tree.command(name='giveaway', description='ギブアウェイを作成します')
+@app_commands.describe(
+    prize='景品の名前',
+    winners='勝者数（1-10）',
+    duration='期限（例: 1w2d3h30m = 1週間2日3時間30分）'
+)
+@app_commands.default_permissions(administrator=True)
+async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: int, duration: str):
+    """ギブアウェイを作成"""
+    
+    # 勝者数の範囲チェック
+    if winners < 1 or winners > 10:
+        await interaction.response.send_message(
+            "❌ 勝者数は1から10までの範囲で指定してください。",
+            ephemeral=True
+        )
+        return
+    
+    # 期限の解析
+    duration_seconds = parse_giveaway_duration(duration)
+    if duration_seconds is None:
+        await interaction.response.send_message(
+            "❌ 期限の形式が無効です。\n"
+            "正しい形式: `1w2d3h30m` (1週間2日3時間30分)\n"
+            "使用可能単位: w(週), d(日), h(時間), m(分)",
+            ephemeral=True
+        )
+        return
+    
+    # 最小1分、最大4週間の制限
+    if duration_seconds < 60:
+        await interaction.response.send_message(
+            "❌ 最小期限は1分です。",
+            ephemeral=True
+        )
+        return
+    
+    if duration_seconds > 2419200:  # 4週間
+        await interaction.response.send_message(
+            "❌ 最大期限は4週間です。",
+            ephemeral=True
+        )
+        return
+    
+    # ギブアウェイの終了時刻を計算
+    end_time = discord.utils.utcnow() + timedelta(seconds=duration_seconds)
+    
+    # ギブアウェイEmbedを作成
+    giveaway_embed = discord.Embed(
+        title="🎉 ギブアウェイ開催中！",
+        description=f"**景品:** {prize}\n"
+                   f"**勝者数:** {winners}人\n"
+                   f"**終了時刻:** {discord.utils.format_dt(end_time, style='F')}\n"
+                   f"**残り時間:** {discord.utils.format_dt(end_time, style='R')}\n\n"
+                   f"🎁 参加するには下の「参加」ボタンをクリック！",
+        color=0xff6b6b,
+        timestamp=discord.utils.utcnow()
+    )
+    
+    giveaway_embed.set_footer(
+        text=f"主催者: {interaction.user.display_name}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    
+    # ギブアウェイビューを作成
+    giveaway_view = GiveawayView(prize, winners, end_time, interaction.user.id)
+    
+    await interaction.response.send_message(embed=giveaway_embed, view=giveaway_view)
+    
+    # ギブアウェイ終了タスクをスケジュール
+    asyncio.create_task(end_giveaway_task(
+        interaction.channel,
+        giveaway_view,
+        prize,
+        winners,
+        end_time,
+        interaction.user
+    ))
+    
+    print(f'{interaction.user.name} がギブアウェイ「{prize}」を開始しました（勝者{winners}人、期限{format_duration(duration_seconds)}）')
+
+@bot.tree.command(name='help', description='ボットの機能一覧を表示します')
+async def help_slash(interaction: discord.Interaction):
+    """ボットの機能一覧を表示"""
+    
+    # メインのヘルプEmbed
+    help_embed = discord.Embed(
+        title="🤖 ボット機能一覧",
+        description="このボットの利用可能な機能をご紹介します。",
+        color=0x3498db,
+        timestamp=discord.utils.utcnow()
+    )
+    
+    # 認証システム機能
+    auth_commands = [
+        "`/role` - 認証メッセージを送信（管理者限定）",
+        "`/call` - 他サーバーの認証済みユーザーを招待（管理者限定）"
+    ]
+    help_embed.add_field(
+        name="🔐 認証システム",
+        value="\n".join(auth_commands),
+        inline=False
+    )
+    
+    # レベルシステム機能
+    level_commands = [
+        "`/level [ユーザー]` - レベル情報を表示",
+        "`/ranking [ページ]` - サーバーランキングを表示"
+    ]
+    help_embed.add_field(
+        name="📊 レベルシステム",
+        value="\n".join(level_commands),
+        inline=False
+    )
+    
+    # チャンネル管理機能
+    channel_commands = [
+        "`/nuke` - チャンネルを再生成（管理者限定）",
+        "`/timenuke <時間>` - 時間指定でチャンネル削除（管理者限定）",
+        "`/timecancel` - 定期削除をキャンセル（管理者限定）",
+        "`/delete <数> [ユーザー]` - メッセージを削除（管理者限定）"
+    ]
+    help_embed.add_field(
+        name="🛠️ チャンネル管理",
+        value="\n".join(channel_commands),
+        inline=False
+    )
+    
+    # 販売機システム機能
+    vending_commands = [
+        "`/vending_setup` - 管理者チャンネル設定（管理者限定）",
+        "`/add_product` - 商品追加（管理者限定）",
+        "`/add_inventory` - 在庫追加（管理者限定）",
+        "`/view_inventory` - 在庫確認（管理者限定）",
+        "`/vending_panel` - 販売機パネル設置（管理者限定）"
+    ]
+    help_embed.add_field(
+        name="🛒 半自動販売機",
+        value="\n".join(vending_commands),
+        inline=False
+    )
+    
+    # チケットシステム機能
+    ticket_commands = [
+        "`/ticket_panel` - チケット作成パネル設置（管理者限定）"
+    ]
+    help_embed.add_field(
+        name="🎫 チケットシステム",
+        value="\n".join(ticket_commands),
+        inline=False
+    )
+    
+    # ギブアウェイ機能
+    giveaway_commands = [
+        "`/giveaway <景品> <勝者数> <期限>` - ギブアウェイを開催（管理者限定）"
+    ]
+    help_embed.add_field(
+        name="🎁 ギブアウェイ",
+        value="\n".join(giveaway_commands),
+        inline=False
+    )
+    
+    # その他の機能
+    other_commands = [
+        "`/log <チャンネル> <メッセージ>` - 指定チャンネルにメッセージ送信（管理者限定）",
+        "`/help` - この機能一覧を表示"
+    ]
+    help_embed.add_field(
+        name="🔧 その他",
+        value="\n".join(other_commands),
+        inline=False
+    )
+    
+    # ボット情報
+    help_embed.add_field(
+        name="ℹ️ ボット情報",
+        value=f"• 参加サーバー数: {len(bot.guilds)}個\n"
+              f"• 利用制限: 2週間（自動退出）\n"
+              f"• 開発者: Discord OAuth認証システム",
+        inline=False
+    )
+    
+    help_embed.set_footer(
+        text="管理者限定コマンドは適切な権限が必要です",
+        icon_url=bot.user.display_avatar.url if bot.user else None
+    )
+    
+    await interaction.response.send_message(embed=help_embed)
+    print(f'{interaction.user.name} が /help コマンドを使用しました')
 
 @bot.tree.command(name='ticket_panel', description='チケット作成パネルを設置します')
 @app_commands.describe(
@@ -1759,13 +2154,16 @@ async def ticket_panel_slash(
     print(f'{interaction.user.name} がチケットパネルを設置しました')
 
 class VendingMachineView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, guild_id):
         super().__init__(timeout=None)
+        self.guild_id = guild_id
         
         # 商品選択用のセレクトメニューを作成
+        vending_machine = bot.get_guild_vending_machine(guild_id)
         options = []
-        for product_id, product in bot.vending_machine['products'].items():
-            if product['stock'] > 0:
+        for product_id, product in vending_machine['products'].items():
+            actual_stock = len(product.get('inventory', []))
+            if actual_stock > 0:
                 options.append(discord.SelectOption(
                     label=f"{product['name']} - ¥{product['price']:,}",
                     value=product_id,
@@ -1785,7 +2183,8 @@ class VendingMachineView(discord.ui.View):
     )
     async def product_select(self, interaction: discord.Interaction, select: discord.ui.Select):
         product_id = select.values[0]
-        product = bot.vending_machine['products'].get(product_id)
+        vending_machine = bot.get_guild_vending_machine(self.guild_id)
+        product = vending_machine['products'].get(product_id)
         
         if not product:
             await interaction.response.send_message(
@@ -1794,7 +2193,9 @@ class VendingMachineView(discord.ui.View):
             )
             return
         
-        if product['stock'] <= 0:
+        # 実際の在庫アイテム数をチェック
+        inventory = product.get('inventory', [])
+        if len(inventory) <= 0:
             await interaction.response.send_message(
                 "❌ この商品は在庫切れです。",
                 ephemeral=True
@@ -1802,32 +2203,21 @@ class VendingMachineView(discord.ui.View):
             return
         
         # 注文IDを生成
-        order_id = bot.vending_machine['next_order_id']
-        bot.vending_machine['next_order_id'] += 1
+        order_id = vending_machine['next_order_id']
+        vending_machine['next_order_id'] += 1
         
-        # 注文を記録
-        bot.vending_machine['orders'][str(order_id)] = {
+        # 注文を記録（在庫は確認時まで減らさない）
+        vending_machine['orders'][str(order_id)] = {
             'user_id': str(interaction.user.id),
             'product_id': product_id,
             'status': 'pending_payment',
             'channel_id': interaction.channel.id,
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            'processed_by': None,  # 処理者のユーザーID
+            'processed_at': None   # 処理日時
         }
         
-        # 在庫を減らす
-        bot.vending_machine['products'][product_id]['stock'] -= 1
         
-        # PayPayリンクを生成（実際のPayPayリンクに置き換えてください）
-        paypay_link = f"https://paypay.ne.jp/app/v2/p2p-api/getP2PLinkInfo?link_key=EXAMPLE_{order_id}"
-        
-        # 管理者チャンネルに通知を送信
-        for admin_channel_id in bot.vending_machine['admin_channels']:
-            try:
-                admin_channel = bot.get_channel(admin_channel_id)
-                if admin_channel:
-                    await self.send_admin_notification(admin_channel, order_id, interaction.user, product, paypay_link)
-            except Exception as e:
-                print(f"管理者チャンネル通知エラー: {e}")
         
         # ユーザーに確認メッセージを送信
         purchase_embed = discord.Embed(
@@ -1841,8 +2231,79 @@ class VendingMachineView(discord.ui.View):
         purchase_embed.add_field(name="金額", value=f"¥{product['price']:,}", inline=True)
         purchase_embed.add_field(name="ステータス", value="支払い確認待ち", inline=True)
         
-        await interaction.response.send_message(embed=purchase_embed, ephemeral=True)
+        # PayPayリンク入力モーダルを表示
+        await interaction.response.send_modal(PayPayLinkModal(order_id, product, self.guild_id))
         print(f'{interaction.user.name} が商品「{product["name"]}」を注文しました (注文ID: {order_id})')
+    
+    async def send_admin_notification(self, channel, order_id, user, product, paypay_link):
+        """管理者チャンネルに通知を送信"""
+        admin_embed = discord.Embed(
+            title="💰 新規注文通知",
+            description=f"新しい商品注文が入りました。",
+            color=0xff6b6b,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        admin_embed.add_field(name="注文ID", value=f"#{order_id}", inline=True)
+        admin_embed.add_field(name="購入者", value=f"{user.mention}\n({user.name})", inline=True)
+        admin_embed.add_field(name="商品", value=product['name'], inline=True)
+        admin_embed.add_field(name="金額", value=f"¥{product['price']:,}", inline=True)
+        admin_embed.add_field(name="PayPayリンク", value=f"[支払いリンク]({paypay_link})", inline=False)
+        
+        admin_embed.set_thumbnail(url=user.display_avatar.url)
+        
+        view = AdminApprovalView(order_id)
+        await channel.send(embed=admin_embed, view=view)
+
+class PayPayLinkModal(discord.ui.Modal, title='PayPay支払いリンク入力'):
+    def __init__(self, order_id, product, guild_id):
+        super().__init__()
+        self.order_id = order_id
+        self.product = product
+        self.guild_id = guild_id
+    
+    paypay_link = discord.ui.TextInput(
+        label='PayPayリンクを入力してください',
+        placeholder='https://paypay.ne.jp/app/v2/p2p-api/getP2PLinkInfo?link_key=...',
+        style=discord.TextStyle.long,
+        required=True,
+        max_length=500
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        paypay_link = self.paypay_link.value.strip()
+        
+        # PayPayリンクの簡単な検証
+        if not paypay_link.startswith('https://paypay.ne.jp/'):
+            await interaction.response.send_message(
+                "❌ 無効なPayPayリンクです。正しいPayPayリンクを入力してください。",
+                ephemeral=True
+            )
+            return
+        
+        # 管理者チャンネルに通知を送信
+        vending_machine = bot.get_guild_vending_machine(self.guild_id)
+        for admin_channel_id in vending_machine['admin_channels']:
+            try:
+                admin_channel = bot.get_channel(admin_channel_id)
+                if admin_channel:
+                    await self.send_admin_notification(admin_channel, self.order_id, interaction.user, self.product, paypay_link)
+            except Exception as e:
+                print(f"管理者チャンネル通知エラー: {e}")
+        
+        # ユーザーに確認メッセージを送信
+        purchase_embed = discord.Embed(
+            title="🛒 商品注文完了",
+            description=f"**{self.product['name']}** の注文を受け付けました。\n"
+                       f"管理者が支払いを確認次第、DMで商品をお送りします。",
+            color=0xffa500
+        )
+        
+        purchase_embed.add_field(name="注文ID", value=f"#{self.order_id}", inline=True)
+        purchase_embed.add_field(name="金額", value=f"¥{self.product['price']:,}", inline=True)
+        purchase_embed.add_field(name="ステータス", value="支払い確認待ち", inline=True)
+        
+        await interaction.response.send_message(embed=purchase_embed, ephemeral=True)
     
     async def send_admin_notification(self, channel, order_id, user, product, paypay_link):
         """管理者チャンネルに通知を送信"""
@@ -1868,6 +2329,7 @@ class AdminApprovalView(discord.ui.View):
     def __init__(self, order_id):
         super().__init__(timeout=3600)  # 1時間でタイムアウト
         self.order_id = str(order_id)
+        self.guild_id = None  # 初期化時は不明、ボタンクリック時に設定
     
     @discord.ui.button(label='商品送信', style=discord.ButtonStyle.success, emoji='✅')
     async def approve_order(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1879,7 +2341,9 @@ class AdminApprovalView(discord.ui.View):
             )
             return
         
-        order = bot.vending_machine['orders'].get(self.order_id)
+        self.guild_id = interaction.guild.id
+        vending_machine = bot.get_guild_vending_machine(self.guild_id)
+        order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
                 "❌ 注文が見つかりません。",
@@ -1887,7 +2351,19 @@ class AdminApprovalView(discord.ui.View):
             )
             return
         
-        if order['status'] != 'pending_payment':
+        if order['status'] == 'completed':
+            await interaction.response.send_message(
+                "❌ この注文は既に商品が送信済みです。重複送信はできません。",
+                ephemeral=True
+            )
+            return
+        elif order['status'] == 'cancelled':
+            await interaction.response.send_message(
+                "❌ この注文はキャンセル済みです。",
+                ephemeral=True
+            )
+            return
+        elif order['status'] != 'pending_payment':
             await interaction.response.send_message(
                 "❌ この注文は既に処理済みです。",
                 ephemeral=True
@@ -1906,7 +2382,9 @@ class AdminApprovalView(discord.ui.View):
             )
             return
         
-        order = bot.vending_machine['orders'].get(self.order_id)
+        guild_id = interaction.guild.id
+        vending_machine = bot.get_guild_vending_machine(guild_id)
+        order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
                 "❌ 注文が見つかりません。",
@@ -1914,12 +2392,7 @@ class AdminApprovalView(discord.ui.View):
             )
             return
         
-        # 在庫を戻す
-        product_id = order['product_id']
-        if product_id in bot.vending_machine['products']:
-            bot.vending_machine['products'][product_id]['stock'] += 1
-        
-        # 注文をキャンセル状態に
+        # 注文をキャンセル状態に（在庫は注文時に減らしていないので戻す必要なし）
         order['status'] = 'cancelled'
         
         # 購入者にDM送信
@@ -1950,17 +2423,82 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
     def __init__(self, order_id):
         super().__init__()
         self.order_id = order_id
+        self.guild_id = None  # 送信時に設定
     
-    product_content = discord.ui.TextInput(
-        label='商品内容',
-        placeholder='DMで送信する商品内容を入力してください...',
-        style=discord.TextStyle.long,
-        required=True,
-        max_length=2000
-    )
+    async def send_achievement_notification(self, guild_id, order_id, buyer, product, processor):
+        """実績チャンネルに購入実績を送信"""
+        try:
+            vending_machine = bot.get_guild_vending_machine(guild_id)
+            achievement_channel_id = vending_machine.get('achievement_channel')
+            
+            if not achievement_channel_id:
+                return  # 実績チャンネルが設定されていない場合はスキップ
+            
+            achievement_channel = bot.get_channel(achievement_channel_id)
+            if not achievement_channel:
+                print(f"実績チャンネルが見つかりません: {achievement_channel_id}")
+                return
+            
+            # 実績Embedを作成
+            achievement_embed = discord.Embed(
+                title="🎉 購入実績",
+                description="新しい商品が購入されました！",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            achievement_embed.add_field(
+                name="👤 購入者",
+                value=f"{buyer.mention}\n({buyer.display_name})",
+                inline=True
+            )
+            
+            achievement_embed.add_field(
+                name="🛒 商品",
+                value=f"**{product['name']}**\n{product['description'][:50]}{'...' if len(product['description']) > 50 else ''}",
+                inline=True
+            )
+            
+            achievement_embed.add_field(
+                name="💰 価格",
+                value=f"¥{product['price']:,}",
+                inline=True
+            )
+            
+            achievement_embed.add_field(
+                name="🆔 注文ID",
+                value=f"#{order_id}",
+                inline=True
+            )
+            
+            achievement_embed.add_field(
+                name="👨‍💼 処理者",
+                value=f"{processor.mention}\n({processor.display_name})",
+                inline=True
+            )
+            
+            achievement_embed.add_field(
+                name="📦 残り在庫",
+                value=f"{product['stock']}個",
+                inline=True
+            )
+            
+            achievement_embed.set_thumbnail(url=buyer.display_avatar.url)
+            achievement_embed.set_footer(
+                text="半自動販売機システム",
+                icon_url=bot.user.display_avatar.url if bot.user else None
+            )
+            
+            await achievement_channel.send(embed=achievement_embed)
+            print(f"実績チャンネルに購入通知を送信しました: 注文 #{order_id}")
+            
+        except Exception as e:
+            print(f"実績通知送信エラー: {e}")
     
     async def on_submit(self, interaction: discord.Interaction):
-        order = bot.vending_machine['orders'].get(self.order_id)
+        guild_id = interaction.guild.id
+        vending_machine = bot.get_guild_vending_machine(guild_id)
+        order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
                 "❌ 注文が見つかりません。",
@@ -1968,13 +2506,36 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             )
             return
         
-        # 注文を完了状態に
+        product_id = order['product_id']
+        product = vending_machine['products'].get(product_id)
+        if not product:
+            await interaction.response.send_message(
+                "❌ 商品が見つかりません。",
+                ephemeral=True
+            )
+            return
+        
+        # 在庫から1つ取り出す
+        inventory = product.get('inventory', [])
+        if not inventory:
+            await interaction.response.send_message(
+                "❌ この商品の在庫がありません。",
+                ephemeral=True
+            )
+            return
+        
+        # 最初の在庫アイテムを取り出し、在庫から削除
+        item_content = inventory.pop(0)
+        product['stock'] = len(inventory)  # 在庫数を更新
+        
+        # 注文を完了状態にし、処理者情報を記録
         order['status'] = 'completed'
+        order['processed_by'] = str(interaction.user.id)
+        order['processed_at'] = time.time()
         
         # 購入者にDMで商品を送信
         try:
             user = await bot.fetch_user(int(order['user_id']))
-            product = bot.vending_machine['products'][order['product_id']]
             
             delivery_embed = discord.Embed(
                 title="📦 商品お届け",
@@ -1985,28 +2546,53 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             
             delivery_embed.add_field(name="注文ID", value=f"#{self.order_id}", inline=True)
             delivery_embed.add_field(name="商品名", value=product['name'], inline=True)
-            delivery_embed.add_field(name="商品内容", value=self.product_content.value, inline=False)
+            delivery_embed.add_field(name="商品内容", value=item_content, inline=False)
             
             await user.send(embed=delivery_embed)
             
-            # 管理者メッセージを更新
+            # 管理者メッセージを更新（ボタンを無効化）
             success_embed = discord.Embed(
                 title="✅ 商品送信完了",
-                description=f"注文 #{self.order_id} の商品を送信しました。\n実行者: {interaction.user.mention}",
-                color=0x00ff00
+                description=f"注文 #{self.order_id} の商品を送信しました。\n"
+                           f"実行者: {interaction.user.mention}\n"
+                           f"残り在庫: {product['stock']}個\n"
+                           f"ステータス: 送信完了",
+                color=0x00ff00,
+                timestamp=discord.utils.utcnow()
+            )
+            
+            success_embed.add_field(
+                name="📦 送信内容", 
+                value=item_content[:100] + ("..." if len(item_content) > 100 else ""), 
+                inline=False
             )
             
             await interaction.response.edit_message(embed=success_embed, view=None)
-            print(f'{interaction.user.name} が注文 #{self.order_id} の商品を送信しました')
+            print(f'{interaction.user.name} が注文 #{self.order_id} の商品を送信しました (残り在庫: {product["stock"]}個)')
+            
+            # 実績チャンネルに通知を送信
+            await self.send_achievement_notification(guild_id, self.order_id, user, product, interaction.user)
             
         except discord.Forbidden:
+            # 送信失敗時は在庫を戻す
+            inventory.insert(0, item_content)
+            product['stock'] = len(inventory)
+            order['status'] = 'pending_payment'  # ステータスを戻す
+            
             await interaction.response.send_message(
-                "❌ 購入者のDMに送信できませんでした。DMが無効になっている可能性があります。",
+                "❌ 購入者のDMに送信できませんでした。DMが無効になっている可能性があります。\n"
+                "在庫は元に戻されました。",
                 ephemeral=True
             )
         except Exception as e:
+            # 送信失敗時は在庫を戻す
+            inventory.insert(0, item_content)
+            product['stock'] = len(inventory)
+            order['status'] = 'pending_payment'  # ステータスを戻す
+            
             await interaction.response.send_message(
-                f"❌ 商品送信中にエラーが発生しました: {str(e)}",
+                f"❌ 商品送信中にエラーが発生しました: {str(e)}\n"
+                "在庫は元に戻されました。",
                 ephemeral=True
             )
             print(f"商品送信エラー: {e}")
@@ -2137,6 +2723,114 @@ class TicketPanelView(discord.ui.View):
                 ephemeral=True
             )
             print(f"Ticket creation error: {e}")
+
+class GiveawayView(discord.ui.View):
+    def __init__(self, prize, winners, end_time, host_id):
+        super().__init__(timeout=None)
+        self.prize = prize
+        self.winners = winners
+        self.end_time = end_time
+        self.host_id = host_id
+        self.participants = set()  # 参加者のユーザーIDセット
+    
+    @discord.ui.button(label='参加', style=discord.ButtonStyle.success, emoji='🎁')
+    async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """ギブアウェイに参加"""
+        user_id = interaction.user.id
+        
+        # 既に終了しているかチェック
+        if discord.utils.utcnow() >= self.end_time:
+            await interaction.response.send_message(
+                "❌ このギブアウェイは既に終了しています。",
+                ephemeral=True
+            )
+            return
+        
+        # 主催者は参加できない
+        if user_id == self.host_id:
+            await interaction.response.send_message(
+                "❌ 主催者は自分のギブアウェイに参加できません。",
+                ephemeral=True
+            )
+            return
+        
+        # 既に参加しているかチェック
+        if user_id in self.participants:
+            await interaction.response.send_message(
+                "❌ 既にこのギブアウェイに参加しています。",
+                ephemeral=True
+            )
+            return
+        
+        # 参加者リストに追加
+        self.participants.add(user_id)
+        
+        # 確認メッセージ
+        join_embed = discord.Embed(
+            title="✅ ギブアウェイ参加完了",
+            description=f"**景品:** {self.prize}\n"
+                       f"ギブアウェイに参加しました！\n\n"
+                       f"抽選は {discord.utils.format_dt(self.end_time, style='R')} に行われます。\n"
+                       f"幸運を祈ります！🍀",
+            color=0x00ff00
+        )
+        
+        join_embed.add_field(
+            name="📊 現在の参加者数",
+            value=f"{len(self.participants)}人",
+            inline=True
+        )
+        
+        join_embed.add_field(
+            name="🏆 勝者数",
+            value=f"{self.winners}人",
+            inline=True
+        )
+        
+        await interaction.response.send_message(embed=join_embed, ephemeral=True)
+        print(f'{interaction.user.name} がギブアウェイ「{self.prize}」に参加しました（現在{len(self.participants)}人参加）')
+    
+    @discord.ui.button(label='参加者数確認', style=discord.ButtonStyle.secondary, emoji='👥')
+    async def check_participants(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """参加者数を確認"""
+        remaining_time = self.end_time - discord.utils.utcnow()
+        
+        if remaining_time.total_seconds() <= 0:
+            status = "終了済み"
+            time_info = "このギブアウェイは終了しています"
+        else:
+            status = "開催中"
+            time_info = f"終了まで {discord.utils.format_dt(self.end_time, style='R')}"
+        
+        info_embed = discord.Embed(
+            title="📊 ギブアウェイ情報",
+            description=f"**景品:** {self.prize}\n"
+                       f"**ステータス:** {status}\n"
+                       f"**{time_info}**",
+            color=0x3498db
+        )
+        
+        info_embed.add_field(
+            name="👥 現在の参加者数",
+            value=f"{len(self.participants)}人",
+            inline=True
+        )
+        
+        info_embed.add_field(
+            name="🏆 勝者数",
+            value=f"{self.winners}人",
+            inline=True
+        )
+        
+        if len(self.participants) > 0:
+            win_rate = (self.winners / len(self.participants)) * 100
+            info_embed.add_field(
+                name="📈 現在の当選確率",
+                value=f"{win_rate:.1f}%",
+                inline=True
+            )
+        
+        await interaction.response.send_message(embed=info_embed, ephemeral=True)
 
 class TicketManageView(discord.ui.View):
     def __init__(self, creator_id: int):
