@@ -34,7 +34,7 @@ GUILD_MEMBER_URL = 'https://discord.com/api/guilds/{}/members/{}'
 class OAuthBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.message_content = True 
+        intents.message_content = False  # Privileged intentを無効化
         intents.guilds = True
         super().__init__(command_prefix='/', intents=intents)
         
@@ -85,7 +85,7 @@ class OAuthBot(commands.Bot):
             # 参加日時を記録（既に記録されていない場合のみ）
             if guild.id not in self.guild_join_dates:
                 self.guild_join_dates[guild.id] = time.time()
-                print(f'サーバー {guild.name} の参加日時を記録しました')
+                print(f'サーバー {guild.name} にさんかしたお！')
         
         # プレイ中ステータスを設定
         await self.update_status()
@@ -97,8 +97,8 @@ class OAuthBot(commands.Bot):
         except Exception as e:
             print(f'スラッシュコマンドの同期エラー: {e}')
         
-        # 2週間制限チェックタスクを開始
-        asyncio.create_task(self.check_guild_expiry())
+        # 2週間制限を無効化（コメントアウト）
+        # asyncio.create_task(self.check_guild_expiry())
         
         # Webサーバーを開始
         await self.start_web_server()
@@ -107,9 +107,9 @@ class OAuthBot(commands.Bot):
         """プレイ中ステータスを更新"""
         try:
             guild_count = len(self.guilds)
-            activity = discord.Game(name=f"{guild_count}個のサーバーで活動中")
+            activity = discord.Game(name=f"{guild_count}個のサーバーで動作中なう")
             await self.change_presence(activity=activity, status=discord.Status.online)
-            print(f'ステータスを更新: {guild_count}個のサーバーで活動中')
+            print(f'ステータスを更新: {guild_count}個のサーバーで動作中なう')
         except Exception as e:
             print(f'ステータス更新エラー: {e}')
     
@@ -141,8 +141,8 @@ class OAuthBot(commands.Bot):
                             
                             if notification_channel:
                                 expire_embed = discord.Embed(
-                                    title="⏰ Bot利用期間終了のお知らせ",
-                                    description="当Botの2週間利用期間が終了しました。\n"
+                                    title="ぼっとについてお知らせ",
+                                    description="無料期間の2週間がしゅうりょうしました！。\n"
                                                "引き続きご利用をご希望の場合は、再度招待してください。\n\n"
                                                "ご利用いただき、ありがとうございました！",
                                     color=0xff6b6b,
@@ -188,43 +188,7 @@ class OAuthBot(commands.Bot):
         """新しいサーバーに参加した時の処理"""
         print(f'新しいサーバーに参加しました: {guild.name} (ID: {guild.id})')
         
-        # 使用済み（2週間制限で退出済み）のサーバーかチェック
-        if guild.id in self.expired_guilds:
-            try:
-                # 拒否メッセージを送信
-                rejection_channel = guild.system_channel
-                if not rejection_channel:
-                    for channel in guild.text_channels:
-                        if channel.permissions_for(guild.me).send_messages:
-                            rejection_channel = channel
-                            break
-                
-                if rejection_channel:
-                    rejection_embed = discord.Embed(
-                        title="❌ 再招待不可",
-                        description="申し訳ございませんが、このサーバーは既に2週間の利用期間を終了しており、\n"
-                                   "再度の招待はできません。\n\n"
-                                   "新しいサーバーでのご利用をお願いいたします。",
-                        color=0xff0000,
-                        timestamp=discord.utils.utcnow()
-                    )
-                    rejection_embed.set_footer(text="このメッセージの後、Botは自動的に退出します")
-                    
-                    await rejection_channel.send(embed=rejection_embed)
-                    await asyncio.sleep(10)  # 10秒待機してメッセージを読む時間を与える
-                
-                # サーバーから即座に退出
-                await guild.leave()
-                print(f'🚫 使用済みサーバー {guild.name} から自動退出しました')
-                return  # 以降の処理をスキップ
-                
-            except Exception as e:
-                print(f'使用済みサーバー退出処理エラー: {e}')
-                try:
-                    await guild.leave()
-                except:
-                    pass
-                return
+        # 期限制限を無効化（すべてのサーバーを受け入れ）
         
         self.guild_configs[guild.id] = {
             'default_role_id': None,
@@ -250,42 +214,33 @@ class OAuthBot(commands.Bot):
             
             if welcome_channel:
                 welcome_embed = discord.Embed(
-                    title="🎉 ご招待ありがとうございます！",
-                    description=f"**{guild.name}** へようこそ！\n\n"
+                    title="m.m.VDを追加くださり、ありがとうございます！",
+                    description=f"機能を簡単に説明します！\n\n"
                                "当Botは以下の機能を提供します：\n"
-                               "• OAuth認証システム\n"
-                               "• レベル・ランキング機能\n"
-                               "• チャンネル管理機能\n"
-                               "• 半自動販売機システム\n"
-                               "• チケットシステム\n\n"
-                               "⚠️ **重要：このBotは2週間の利用制限があります**\n"
-                               "2週間後に自動的にサーバーから退出します。",
+                               "• 半自動販売機\n"
+                               "• レベル機能\n"
+                               "• nukeとかその他もろもろ\n"
+                               "• マスカレードのlog\n"
+                               "• あとは自分でhelpコマンドで確認してね！\n\n",
                     color=0x00ff00,
                     timestamp=discord.utils.utcnow()
                 )
                 
-                expire_date = discord.utils.utcnow() + timedelta(days=14)
                 welcome_embed.add_field(
-                    name="📅 利用期限",
-                    value=discord.utils.format_dt(expire_date, style='F'),
-                    inline=True
-                )
-                
-                welcome_embed.add_field(
-                    name="🔧 設定方法",
+                    name="設定方法",
                     value="管理者は `/role` コマンドで認証システムを設定できます",
                     inline=True
                 )
                 
                 await welcome_channel.send(embed=welcome_embed)
-                print(f'歓迎メッセージを {guild.name} に送信しました')
+                print(f'認証完了メッセージを {guild.name} に送信しました')
                 
         except Exception as e:
             print(f'歓迎メッセージ送信エラー ({guild.name}): {e}')
     
     async def on_guild_remove(self, guild):
         """サーバーから退出した時の処理"""
-        print(f'サーバーから退出しました: {guild.name} (ID: {guild.id})')
+        print(f'サーバーから退出したよ！: {guild.name} (ID: {guild.id})')
         
         # 関連データをクリーンアップ
         if guild.id in self.guild_configs:
@@ -322,16 +277,16 @@ class OAuthBot(commands.Bot):
         if leveled_up:
             level_up_embed = discord.Embed(
                 title="🎉 レベルアップ！",
-                description=f"{message.author.mention} さんがレベル {new_level} になりました！",
+                description=f"{message.author.mention} mpレベルが {new_level} になりました！",
                 color=0xffd700
             )
             level_up_embed.add_field(
-                name="前のレベル",
+                name="さっきまでのレベル",
                 value=f"レベル {old_level}",
                 inline=True
             )
             level_up_embed.add_field(
-                name="新しいレベル", 
+                name="レベルアップ時のレベル", 
                 value=f"レベル {new_level}",
                 inline=True
             )
@@ -505,7 +460,7 @@ class OAuthBot(commands.Bot):
             success = await self.add_member_to_guild(access_token, user_id, guild_id)
             
             if success:
-                print(f'✅ サーバーへの追加が成功しました')
+                print(f'サーバーへの追加が成功しました')
                 
                 # サーバー参加の確認を複数回試行
                 guild = self.get_guild(guild_id)
@@ -531,7 +486,7 @@ class OAuthBot(commands.Bot):
                 # メンバーが確認できた場合のみ認証済みユーザーとして記録
                 if member_found:
                     # 指定されたロールを付与
-                    print(f'🎭 ロール付与を試行中...')
+                    print(f'ロール付与を試行中...')
                     role_assigned = await self.assign_role(user_id, guild_id, role_id)
                     
                     # 認証済みユーザーとして記録
@@ -541,7 +496,7 @@ class OAuthBot(commands.Bot):
                         self.authenticated_users[guild_id].append(user_id)
                         print(f'認証済みユーザーに追加: {username} (User ID: {user_id}, Guild ID: {guild_id})')
                 else:
-                    print(f'❌ サーバー参加の確認に失敗しました')
+                    print(f'サーバー参加の確認に失敗しました')
                     success = False  # 実際にはサーバー参加に失敗
                 
                 # ロール名を取得して表示
@@ -623,8 +578,8 @@ class OAuthBot(commands.Bot):
                 return web.Response(text=html, content_type='text/html', status=400)
                 
         except Exception as e:
-            print(f'OAuth処理エラー: {e}')
-            return web.Response(text=f'処理中にエラーが発生しました: {e}', status=500)
+            print(f'処理エラーだよ！: {e}')
+            return web.Response(text=f'処理中にエラーが発生しました、管理者に伝えてね: {e}', status=500)
     
     async def get_access_token(self, code):
         """認証コードからアクセストークンを取得"""
@@ -704,17 +659,17 @@ class OAuthBot(commands.Bot):
                         error_text = await response.text()
                         
                         if status == 201:
-                            print(f'🎉 新しいメンバーがサーバーに参加しました')
+                            print(f'メンバーがサーバーに参加したよ！')
                             return True
                         elif status in [200, 204]:
-                            print(f'ℹ️ ユーザーは既にサーバーのメンバーでした')
+                            print(f'既にサーバーのメンバーです！')
                             return True
                         elif status == 403:
-                            print(f'❌ 権限エラー: サーバーに参加する権限がありません')
+                            print(f'サーバーに参加する権限がないっぽいです！')
                             print(f'📄 詳細: {error_text}')
                             return False
                         elif status == 400:
-                            print(f'❌ リクエストエラー: 無効なリクエストまたは制限に達しています')
+                            print(f'無効なリクエストだよ！')
                             print(f'📄 詳細: {error_text}')
                             return False
                         elif status == 429:
@@ -741,7 +696,7 @@ class OAuthBot(commands.Bot):
     
     async def assign_role(self, user_id, guild_id, role_id):
         """ユーザーに指定されたサーバーでロールを付与（最初からAPI呼び出しを使用）"""
-        print(f'🎭 ロール付与を API 経由で実行中: User {user_id}, Role {role_id}, Guild {guild_id}')
+        print(f'ロール付与を API 経由で実行中: User {user_id}, Role {role_id}, Guild {guild_id}')
         return await self.assign_role_via_api(user_id, guild_id, role_id)
     
     async def assign_role_via_api(self, user_id, guild_id, role_id):
@@ -844,14 +799,14 @@ class OAuthBot(commands.Bot):
             
             # 成功メッセージを新しいチャンネルに送信
             success_embed = discord.Embed(
-                title="🕐 定期チャンネル削除完了",
-                description=f"チャンネル「{channel_name}」が定期削除により再生成されました。\n実行者: {author_name}",
+                title="定期nuke完了",
+                description=f"チャンネル「{channel_name}」が定期nukeによりnukeされたよ！\nじっこうしゃ: {author_name}",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             await new_channel.send(embed=success_embed)
             
-            print(f'定期nuke実行: チャンネル「{channel_name}」が再生成されました (実行者: {author_name})')
+            print(f'定期nuke実行: チャンネル「{channel_name}」がnukeされました (実行者: {author_name})')
             
         except asyncio.CancelledError:
             print(f'定期nuke がキャンセルされました: {channel.name}')
@@ -921,15 +876,15 @@ async def end_giveaway_task(channel, giveaway_view, prize, winners, end_time, ho
         if len(participants) == 0:
             # 参加者がいない場合
             no_participants_embed = discord.Embed(
-                title="🎉 ギブアウェイ終了",
+                title="giveaway終了",
                 description=f"**景品:** {prize}\n\n"
-                           f"❌ 参加者がいませんでした。\n"
-                           f"ギブアウェイは無効となります。",
+                           f"❌ 参加者がいないよぉ...\n"
+                           f"giveawayが無効になったよ！",
                 color=0x95a5a6,
                 timestamp=discord.utils.utcnow()
             )
             no_participants_embed.set_footer(
-                text=f"主催者: {host.display_name}",
+                text=f"開催者: {host.display_name}",
                 icon_url=host.display_avatar.url
             )
             
@@ -959,19 +914,17 @@ async def end_giveaway_task(channel, giveaway_view, prize, winners, end_time, ho
         
         # 結果のEmbedを作成
         result_embed = discord.Embed(
-            title="🎉 ギブアウェイ終了！",
+            title="giveaway終了！",
             description=f"**景品:** {prize}\n\n"
                        f"🏆 **勝者（{actual_winners}人）:**\n" + "\n".join(winner_mentions) + "\n\n"
-                       f"おめでとうございます！🎊",
+                       f"おめでとうございます！",
             color=0x00ff00,
             timestamp=discord.utils.utcnow()
         )
         
         result_embed.add_field(
-            name="📊 参加統計",
-            value=f"総参加者数: {len(participants)}人\n"
-                 f"当選確率: {(actual_winners/len(participants)*100):.1f}%",
-            inline=True
+            name="📊 参加者など",
+            value=f"giveaway参加者数: {len(participants)}人\n"
         )
         
         result_embed.set_footer(
@@ -983,12 +936,12 @@ async def end_giveaway_task(channel, giveaway_view, prize, winners, end_time, ho
         winner_mentions_str = " ".join(winner_mentions)
         await channel.send(content=f"🎉 {winner_mentions_str}", embed=result_embed)
         
-        print(f'ギブアウェイ「{prize}」が終了しました。勝者: {len(winner_ids)}人、参加者: {len(participants)}人')
+        print(f'giveaway「{prize}」が終了したよ！。勝者: {len(winner_ids)}人、参加者数: {len(participants)}人')
         
     except asyncio.CancelledError:
-        print(f'ギブアウェイ「{prize}」がキャンセルされました')
+        print(f'giveaway「{prize}」がキャンセルされました！')
     except Exception as e:
-        print(f'ギブアウェイ終了エラー: {e}')
+        print(f'giveawayの終了エラー: {e}')
 
 # ボットコマンド
 bot = OAuthBot()
@@ -1011,9 +964,8 @@ class AuthLinkView(discord.ui.View):
         
         # OAuth2リンクボタンを追加
         self.add_item(discord.ui.Button(
-            label='認証',
+            label='にんしょう！',
             style=discord.ButtonStyle.link,
-            emoji='🔗',
             url=oauth_link
         ))
     
@@ -1046,7 +998,7 @@ class RoleSelectView(discord.ui.View):
             self.remove_item(self.role_select)
     
     @discord.ui.select(
-        placeholder="付与するロールを選択してください...",
+        placeholder="付与したいロールを選択してください...",
         min_values=1,
         max_values=1
     )
@@ -1063,7 +1015,7 @@ class RoleSelectView(discord.ui.View):
         
         embed = discord.Embed(
             title="こんにちは！",
-            description="リンクボタンから登録して認証完了",
+            description="ボタンを押してにんしょうしてね！",
             color=0x00ff00
         )
         
@@ -1071,7 +1023,7 @@ class RoleSelectView(discord.ui.View):
 
 # スラッシュコマンド
 @bot.tree.command(name='role', description='認証メッセージを送信します')
-@app_commands.describe(role='付与するロール', channel='送信するチャンネル（省略した場合は現在のチャンネル）')
+@app_commands.describe(role='付与したいロールを選択してね', channel='このパネルを送るチャンネルを選択（省略した場合は現在のチャンネル）')
 @app_commands.default_permissions(administrator=True)
 async def role_slash(interaction: discord.Interaction, role: discord.Role, channel: discord.TextChannel = None):
     """認証メッセージを指定したチャンネルに送信"""
@@ -1081,21 +1033,21 @@ async def role_slash(interaction: discord.Interaction, role: discord.Role, chann
     
     embed = discord.Embed(
         title="こんにちは！",
-        description="リンクボタンから登録して認証完了",
+        description="ボタンを押してにんしょうしてね！",
         color=0x00ff00
     )
     
     await target_channel.send(embed=embed, view=view)
     await interaction.response.send_message(f"認証メッセージを {target_channel.mention} に送信しました", ephemeral=True)
 
-@bot.tree.command(name='call', description='他のサーバーで認証済みのユーザーを現在のサーバーに直接参加させます')
+@bot.tree.command(name='call', description='麺爆機能です、使えないです')
 @app_commands.default_permissions(administrator=True)
 async def call_slash(interaction: discord.Interaction):
-    """他のサーバーで認証済みのユーザーを現在のサーバーに直接参加させる"""
+    """ただの麺爆機能"""
     
     # mume_dayoユーザーのみ使用可能
     if interaction.user.name != 'mume_dayo':
-        await interaction.response.send_message("❌ このコマンドはmume_dayoユーザーのみが使用できます。", ephemeral=True)
+        await interaction.response.send_message("❌ このコマンドはむめーのみしか使えません、ごめんね", ephemeral=True)
         return
     
     # レスポンスを遅延（処理時間がかかる可能性があるため）
@@ -1132,7 +1084,7 @@ async def call_slash(interaction: discord.Interaction):
                         'source_guild_id': guild_id
                     })
                 else:
-                    print(f'ユーザー {user_id} のアクセストークンが見つかりません')
+                    print(f'ユーザー {user_id} のアクセストークンが見つからないお！')
                 
             except Exception as e:
                 print(f'ユーザー {user_id} の情報取得エラー: {e}')
@@ -1153,7 +1105,7 @@ async def call_slash(interaction: discord.Interaction):
             
             try:
                 # 保存されたアクセストークンを使って直接サーバーに参加
-                print(f'🚀 ユーザー {user.name} を {current_guild.name} に参加させています...')
+                print(f'ユーザー {user.name} を {current_guild.name} に参加させています...')
                 success = await bot.add_member_to_guild(access_token, user_id, current_guild_id)
                 
                 if success:
@@ -1197,21 +1149,21 @@ async def call_slash(interaction: discord.Interaction):
     total_processed = already_member_count + added_count + failed_count
     
     if total_processed == 0:
-        await interaction.followup.send("📭 追加対象の認証済みユーザーが見つかりませんでした。\n\n"
+        await interaction.followup.send("追加対象の認証済みユーザーが見つかりませんでした。\n\n"
                                        "• 他のサーバーで認証済みのユーザーがいません\n"
                                        "• アクセストークンが保存されているユーザーがいません", ephemeral=True)
         return
     
-    result_message = f"🎯 **サーバー参加結果** - {current_guild.name}\n\n"
+    result_message = f"**サーバー参加結果** - {current_guild.name}\n\n"
     
     if already_member_count > 0:
-        result_message += f"📋 既にメンバー: {already_member_count}人\n"
+        result_message += f" 既にメンバー: {already_member_count}人\n"
     
     if added_count > 0:
-        result_message += f"✅ 新規参加: {added_count}人\n"
+        result_message += f" 新規参加: {added_count}人\n"
     
     if failed_count > 0:
-        result_message += f"❌ 参加失敗: {failed_count}人\n"
+        result_message += f" 参加失敗: {failed_count}人\n"
     
     result_message += f"\n**合計処理数:** {total_processed}人"
     
@@ -1228,11 +1180,8 @@ async def nuke_slash(interaction: discord.Interaction):
     # 確認メッセージを送信
     confirm_embed = discord.Embed(
         title="⚠️ チャンネル再生成の確認",
-        description=f"チャンネル「{channel.name}」を再生成しますか？\n\n"
-                   "この操作により：\n"
-                   "• 現在のチャンネルは削除されます\n" 
-                   "• 同じ名前と権限で新しいチャンネルが作成されます\n"
-                   "• すべてのメッセージ履歴が削除されます\n\n"
+        description=f"チャンネル「{channel.name}」をnukeしますか？\n\n"
+                   "nukeするんだよね！：\n"
                    "**この操作は取り消せません！**",
         color=0xff0000
     )
@@ -1242,8 +1191,8 @@ async def nuke_slash(interaction: discord.Interaction):
     await interaction.response.send_message(embed=confirm_embed, view=view, ephemeral=True)
     view.message = await interaction.original_response()
 
-@bot.tree.command(name='level', description='自分または指定したユーザーのレベル情報を表示します')
-@app_commands.describe(user='レベル情報を表示するユーザー（省略した場合は自分）')
+@bot.tree.command(name='level', description='あなたのレベルを確認できます！')
+@app_commands.describe(user='レベル情報を見たいユーザー（省略した場合は自分）')
 async def level_slash(interaction: discord.Interaction, user: discord.Member = None):
     """ユーザーのレベル情報を表示"""
     target_user = user or interaction.user
@@ -1254,7 +1203,7 @@ async def level_slash(interaction: discord.Interaction, user: discord.Member = N
     if guild_id not in bot.user_levels or user_id not in bot.user_levels[guild_id]:
         embed = discord.Embed(
             title="📊 レベル情報",
-            description=f"{target_user.display_name} さんはまだメッセージを送信していません。",
+            description=f"{target_user.display_name} さんはまだメッセージを送信してないよ！",
             color=0x95a5a6
         )
         await interaction.response.send_message(embed=embed)
@@ -1290,13 +1239,13 @@ async def level_slash(interaction: discord.Interaction, user: discord.Member = N
     )
     
     embed.add_field(
-        name="🏆 現在のレベル",
+        name="いまのれべる！",
         value=f"レベル {current_level}",
         inline=True
     )
     
     embed.add_field(
-        name="⭐ 合計XP",
+        name="合計ぽいんと！",
         value=f"{current_xp:,} XP",
         inline=True
     )
@@ -1309,22 +1258,22 @@ async def level_slash(interaction: discord.Interaction, user: discord.Member = N
     
     embed.add_field(
         name="📈 次のレベルまで",
-        value=f"{progress_bar}\n{xp_progress}/{xp_required_for_next} XP ({xp_needed} XP 必要)",
+        value=f"{progress_bar}\n{xp_progress}/{xp_required_for_next} XP ({xp_needed} XPぐらい必要だよ)",
         inline=False
     )
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name='ranking', description='サーバーのレベルランキングを表示します')
-@app_commands.describe(page='表示するページ（1ページ10人）')
+@bot.tree.command(name='ranking', description='れべるらんきんぐだよ！')
+@app_commands.describe(page='表示するページ（1ページに10人まで）')
 async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     """サーバーのレベルランキングを表示"""
     guild_id = interaction.guild.id
     
     if guild_id not in bot.user_levels or not bot.user_levels[guild_id]:
         embed = discord.Embed(
-            title="🏆 レベルランキング",
-            description="このサーバーにはまだランキングデータがありません。",
+            title="ランキングだよ！",
+            description="このサーバーにはまだランキングデータないよ！もっと発言してね！",
             color=0x95a5a6
         )
         await interaction.response.send_message(embed=embed)
@@ -1345,7 +1294,7 @@ async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     if page < 1 or page > total_pages:
         embed = discord.Embed(
             title="❌ エラー",
-            description=f"無効なページ番号です。1～{total_pages}の範囲で指定してください。",
+            description=f"無効なページ番号です。1～{total_pages}の範囲で指定してね！",
             color=0xe74c3c
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1357,7 +1306,7 @@ async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     page_users = sorted_users[start_index:end_index]
     
     embed = discord.Embed(
-        title="🏆 レベルランキング",
+        title="ランキングだよ！",
         description=f"ページ {page}/{total_pages}",
         color=0xffd700
     )
@@ -1385,13 +1334,13 @@ async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     if ranking_text:
         embed.description = f"ページ {page}/{total_pages}\n\n{ranking_text}"
     else:
-        embed.description = "このページには表示するユーザーがいません。"
+        embed.description = "このページには表示するユーザーがいないよ！"
     
     embed.set_footer(text=f"合計 {len(sorted_users)} 人のユーザー")
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name='log', description='指定したチャンネルにユーザーになりきってメッセージを送信します')
+@bot.tree.command(name='masquerade', description='指定チャンネルにメッセージをおくるよ！')
 @app_commands.describe(
     channel='メッセージを送信するチャンネル',
     message='送信するメッセージ'
@@ -1417,7 +1366,7 @@ async def log_slash(
             ephemeral=True
         )
         
-        print(f"📤 {current_user.name} が {channel.name} にメッセージを送信しました: {message[:50]}...")
+        print(f"📤 {current_user.name} が {channel.name} にメッセージを送ったよ！: {message[:50]}...")
                     
     except discord.Forbidden:
         await interaction.response.send_message(
@@ -1431,18 +1380,18 @@ async def log_slash(
         )
         print(f"❌ Log command error: {e}")
 
-@bot.tree.command(name='timenuke', description='指定した時間後にチャンネルを自動削除・再生成します')
+@bot.tree.command(name='timenuke', description='指定した時間でnukeします')
 @app_commands.describe(time='削除までの時間（d:h:m:s形式、例: 0:1:30:0 = 1時間30分後）')
 @app_commands.default_permissions(administrator=True)
 async def timenuke_slash(interaction: discord.Interaction, time: str):
-    """指定した時間後にチャンネルを削除・再生成する"""
+    """指定した時間でチャンネルをnukeします"""
     channel = interaction.channel
     
     # 既に定期削除が設定されているかチェック
     if channel.id in bot.scheduled_nukes:
         await interaction.response.send_message(
             "❌ このチャンネルには既に定期削除が設定されています。\n"
-            "`/timecancel` でキャンセルしてから再設定してください。",
+            "`/timecancel` でnukeをキャンセルしてから再設定してね！。",
             ephemeral=True
         )
         return
@@ -1460,14 +1409,14 @@ async def timenuke_slash(interaction: discord.Interaction, time: str):
     # 最小1分、最大7日間の制限
     if delay_seconds < 60:
         await interaction.response.send_message(
-            "❌ 最小時間は1分です。",
+            "❌ 最小時間は1分だよ！。",
             ephemeral=True
         )
         return
     
     if delay_seconds > 604800:  # 7日間
         await interaction.response.send_message(
-            "❌ 最大時間は7日間です。",
+            "❌ 最大時間は一週間だよ！。",
             ephemeral=True
         )
         return
@@ -1483,35 +1432,35 @@ async def timenuke_slash(interaction: discord.Interaction, time: str):
     time_remaining = bot.format_time_remaining(delay_seconds)
     
     confirm_embed = discord.Embed(
-        title="⏰ 定期削除を設定しました",
-        description=f"チャンネル「{channel.name}」を**{time_remaining}後**に削除・再生成します。",
+        title="定期nukeを設定しました！",
+        description=f"チャンネル「{channel.name}」を**{time_remaining}後**にnukeします！",
         color=0xff9500,
         timestamp=discord.utils.utcnow()
     )
     
     confirm_embed.add_field(
-        name="🕐 実行予定時刻",
+        name="実行時刻",
         value=discord.utils.format_dt(execution_time, style='F'),
         inline=True
     )
     
     confirm_embed.add_field(
-        name="👤 実行者",
+        name="実行しようとしてる人",
         value=interaction.user.mention,
         inline=True
     )
     
     confirm_embed.add_field(
-        name="ℹ️ 注意",
+        name="注意！",
         value="`/timecancel` でキャンセル可能です",
         inline=False
     )
     
     await interaction.response.send_message(embed=confirm_embed)
     
-    print(f'{interaction.user.name} がチャンネル「{channel.name}」に{time_remaining}後の定期削除を設定しました')
+    print(f'{interaction.user.name} がチャンネル「{channel.name}」に{time_remaining}後の定期nukeを設定しました！')
 
-@bot.tree.command(name='timecancel', description='設定されている定期削除をキャンセルします')
+@bot.tree.command(name='timecancel', description='設定されている定期nukeをキャンセルします')
 @app_commands.default_permissions(administrator=True)
 async def timecancel_slash(interaction: discord.Interaction):
     """定期削除をキャンセルする"""
@@ -1519,7 +1468,7 @@ async def timecancel_slash(interaction: discord.Interaction):
     
     if channel.id not in bot.scheduled_nukes:
         await interaction.response.send_message(
-            "❌ このチャンネルには定期削除が設定されていません。",
+            "※ このチャンネルには定期削除が設定されていません。",
             ephemeral=True
         )
         return
@@ -1530,26 +1479,26 @@ async def timecancel_slash(interaction: discord.Interaction):
     del bot.scheduled_nukes[channel.id]
     
     cancel_embed = discord.Embed(
-        title="🚫 定期削除をキャンセルしました",
-        description=f"チャンネル「{channel.name}」の定期削除がキャンセルされました。",
+        title="※ 定期nukeをキャンセルしたよ！",
+        description=f"チャンネル「{channel.name}」の定期nukeがキャンセルされたよ！。",
         color=0x95a5a6,
         timestamp=discord.utils.utcnow()
     )
     
     cancel_embed.add_field(
-        name="👤 キャンセル実行者",
+        name="実行者",
         value=interaction.user.mention,
         inline=True
     )
     
     await interaction.response.send_message(embed=cancel_embed)
     
-    print(f'{interaction.user.name} がチャンネル「{channel.name}」の定期削除をキャンセルしました')
+    print(f'{interaction.user.name} がチャンネル「{channel.name}」の定期nukeをキャンセルしたよ！')
 
-@bot.tree.command(name='delete', description='指定した数のメッセージを削除します')
+@bot.tree.command(name='delete', description='指定メッセージ数を削除するよ！')
 @app_commands.describe(
     amount='削除するメッセージ数（1-100）',
-    member='特定のメンバーのメッセージのみ削除（省略可）'
+    member='特定のメンバーのメッセージのみ削除'
 )
 @app_commands.default_permissions(manage_messages=True)
 async def delete_slash(interaction: discord.Interaction, amount: int, member: discord.Member = None):
@@ -1558,7 +1507,7 @@ async def delete_slash(interaction: discord.Interaction, amount: int, member: di
     # 削除数の制限
     if amount < 1 or amount > 100:
         await interaction.response.send_message(
-            "❌ 削除数は1から100までの範囲で指定してください。",
+            "❌ 削除数は1から100までの範囲で指定してね！",
             ephemeral=True
         )
         return
@@ -1597,8 +1546,8 @@ async def delete_slash(interaction: discord.Interaction, amount: int, member: di
                     continue
             
             result_embed = discord.Embed(
-                title="🗑️ メッセージ削除完了",
-                description=f"{member.mention} のメッセージを **{deleted_count}件** 削除しました。",
+                title="メッセージ削除完了！",
+                description=f"{member.mention} のメッセージを **{deleted_count}件** 削除したよ！。",
                 color=0xe74c3c,
                 timestamp=discord.utils.utcnow()
             )
@@ -1645,36 +1594,36 @@ async def delete_slash(interaction: discord.Interaction, amount: int, member: di
                     continue
             
             result_embed = discord.Embed(
-                title="🗑️ メッセージ削除完了",
-                description=f"最新のメッセージを **{deleted_count}件** 削除しました。",
+                title="メッセージ削除完了",
+                description=f"最新のメッセージから **{deleted_count}件** 削除したよ！",
                 color=0xe74c3c,
                 timestamp=discord.utils.utcnow()
             )
         
         result_embed.add_field(
-            name="👤 実行者",
+            name="実行者",
             value=interaction.user.mention,
             inline=True
         )
         
         result_embed.add_field(
-            name="📍 チャンネル",
+            name="チャンネル",
             value=f"#{channel.name}",
             inline=True
         )
         
         await interaction.followup.send(embed=result_embed, ephemeral=True)
         
-        print(f'{interaction.user.name} が {channel.name} で {deleted_count}件のメッセージを削除しました (対象: {member.name if member else "全員"})')
+        print(f'{interaction.user.name} が {channel.name} で {deleted_count}件のメッセージを削除したよ！ (対象: {member.name if member else "全員"})')
         
     except Exception as e:
         await interaction.followup.send(
-            f"❌ メッセージ削除中にエラーが発生しました: {str(e)}",
+            f"※ メッセージ削除中にエラーが発生しました: {str(e)}",
             ephemeral=True
         )
         print(f"Delete command error: {e}")
 
-@bot.tree.command(name='vending_setup', description='販売機の管理者チャンネルを設定します')
+@bot.tree.command(name='vending_setup', description='ペイリンクと許可ボタンの送信場所を選択できます！')
 @app_commands.default_permissions(administrator=True)
 async def vending_setup_slash(interaction: discord.Interaction):
     """販売機の管理者チャンネルを設定"""
@@ -1684,7 +1633,7 @@ async def vending_setup_slash(interaction: discord.Interaction):
     
     if channel_id in vending_machine['admin_channels']:
         await interaction.response.send_message(
-            "❌ このチャンネルは既に管理者チャンネルとして設定されています。",
+            "このチャンネルですでに完了してるよ！。",
             ephemeral=True
         )
         return
@@ -1692,21 +1641,21 @@ async def vending_setup_slash(interaction: discord.Interaction):
     vending_machine['admin_channels'].add(channel_id)
     
     setup_embed = discord.Embed(
-        title="⚙️ 販売機管理者チャンネル設定完了",
+        title="管理者チャンネル設定完了！",
         description=f"このチャンネルが販売機の管理者チャンネルとして設定されました。\n"
-                   f"商品が購入されると、ここに承認依頼が送信されます。",
+                   f"認証リンクなどはここに送信されます。",
         color=0x00ff00,
         timestamp=discord.utils.utcnow()
     )
     
     await interaction.response.send_message(embed=setup_embed)
-    print(f'{interaction.user.name} がチャンネル {interaction.channel.name} を販売機管理者チャンネルに設定しました')
+    print(f'{interaction.user.name} がチャンネル {interaction.channel.name} を販売機管理者チャンネルに設定したよ！')
 
-@bot.tree.command(name='add_product', description='販売機に商品を追加します')
+@bot.tree.command(name='add_product', description='販売機に商品を追加(商品名)できます')
 @app_commands.describe(
     product_id='商品ID（英数字）',
     name='商品名',
-    price='価格（円）',
+    price='価格',
     description='商品説明',
     stock='在庫数'
 )
@@ -1722,21 +1671,21 @@ async def add_product_slash(
     """販売機に商品を追加"""
     if not product_id.replace('_', '').isalnum():
         await interaction.response.send_message(
-            "❌ 商品IDは英数字とアンダースコアのみ使用可能です。",
+            "商品IDは英数字のみ使用可能です！",
             ephemeral=True
         )
         return
     
     if price < 1:
         await interaction.response.send_message(
-            "❌ 価格は1円以上で設定してください。",
+            "価格は1円以上で設定してね！",
             ephemeral=True
         )
         return
     
     if stock < 0:
         await interaction.response.send_message(
-            "❌ 在庫数は0以上で設定してください。",
+            "在庫数は0以上で設定してね！",
             ephemeral=True
         )
         return
@@ -1763,7 +1712,7 @@ async def add_product_slash(
     product_embed.add_field(name="在庫", value=f"{stock}個", inline=True)
     product_embed.add_field(name="説明", value=description, inline=False)
     product_embed.add_field(
-        name="📦 次のステップ", 
+        name="次に...", 
         value=f"`/add_inventory {product_id}` で在庫アイテムを追加してください", 
         inline=False
     )
@@ -1771,7 +1720,7 @@ async def add_product_slash(
     await interaction.response.send_message(embed=product_embed)
     print(f'{interaction.user.name} が商品「{name}」を販売機に追加しました')
 
-@bot.tree.command(name='add_inventory', description='商品に在庫アイテムを追加します')
+@bot.tree.command(name='add_inventory', description='在庫を追加します(一個ずつ)')
 @app_commands.describe(
     product_id='商品ID',
     item_content='在庫アイテムの内容（購入時にDMで送信される内容）'
@@ -1788,7 +1737,7 @@ async def add_inventory_slash(
     
     if product_id not in vending_machine['products']:
         await interaction.response.send_message(
-            f"❌ 商品ID「{product_id}」が見つかりません。",
+            f"❌ 商品ID「{product_id}」が見つからないよ！。",
             ephemeral=True
         )
         return
@@ -1803,7 +1752,7 @@ async def add_inventory_slash(
     product['stock'] = len(product['inventory'])  # 在庫数を実際のアイテム数に更新
     
     inventory_embed = discord.Embed(
-        title="✅ 在庫アイテム追加完了",
+        title="在庫追加完了！",
         description=f"商品「{product['name']}」に在庫アイテムを追加しました。",
         color=0x00ff00
     )
@@ -1813,9 +1762,9 @@ async def add_inventory_slash(
     inventory_embed.add_field(name="追加された内容", value=item_content[:100] + ("..." if len(item_content) > 100 else ""), inline=False)
     
     await interaction.response.send_message(embed=inventory_embed)
-    print(f'{interaction.user.name} が商品「{product["name"]}」に在庫アイテムを追加しました')
+    print(f'{interaction.user.name} が商品「{product["name"]}」に在庫アイテムを追加しました！')
 
-@bot.tree.command(name='view_inventory', description='商品の在庫アイテム一覧を表示します')
+@bot.tree.command(name='view_inventory', description='商品の在庫一覧を表示します')
 @app_commands.describe(product_id='商品ID')
 @app_commands.default_permissions(administrator=True)
 async def view_inventory_slash(interaction: discord.Interaction, product_id: str):
@@ -1825,7 +1774,7 @@ async def view_inventory_slash(interaction: discord.Interaction, product_id: str
     
     if product_id not in vending_machine['products']:
         await interaction.response.send_message(
-            f"❌ 商品ID「{product_id}」が見つかりません。",
+            f"❌ 商品ID「{product_id}」が見つからないよ！",
             ephemeral=True
         )
         return
@@ -1835,13 +1784,13 @@ async def view_inventory_slash(interaction: discord.Interaction, product_id: str
     
     if not inventory:
         await interaction.response.send_message(
-            f"📦 商品「{product['name']}」には在庫アイテムがありません。",
+            f"商品「{product['name']}」には在庫がないよ！",
             ephemeral=True
         )
         return
     
     inventory_embed = discord.Embed(
-        title=f"📦 在庫アイテム一覧 - {product['name']}",
+        title=f"在庫一覧 - {product['name']}",
         description=f"商品ID: {product_id}\n在庫数: {len(inventory)}個",
         color=0x3498db
     )
@@ -1855,10 +1804,10 @@ async def view_inventory_slash(interaction: discord.Interaction, product_id: str
     
     await interaction.response.send_message(embed=inventory_embed, ephemeral=True)
 
-@bot.tree.command(name='vending_panel', description='販売機パネルを設置します')
+@bot.tree.command(name='vending_panel', description='販売機パネルを設置するよ！')
 @app_commands.describe(
-    admin_channel='管理者チャンネル（省略した場合は既存の設定を使用）',
-    achievement_channel='実績チャンネル（購入実績を自動送信、省略可）'
+    admin_channel='管理者チャンネル）',
+    achievement_channel='実績チャンネル（購入実績を自動送信するよ！）'
 )
 @app_commands.default_permissions(administrator=True)
 async def vending_panel_slash(
@@ -1872,7 +1821,7 @@ async def vending_panel_slash(
     
     if not vending_machine['products']:
         await interaction.response.send_message(
-            "❌ 販売する商品がありません。先に `/add_product` で商品を追加してください。",
+            "販売する商品がないよ！。先に `/add_product` で商品を追加してね！",
             ephemeral=True
         )
         return
@@ -1889,38 +1838,36 @@ async def vending_panel_slash(
     
     if not vending_machine['admin_channels']:
         await interaction.response.send_message(
-            "❌ 管理者チャンネルが設定されていません。`admin_channel`パラメータでチャンネルを指定するか、先に `/vending_setup` で設定してください。",
+            "管理者チャンネルが設定されないよ！、先に `/vending_setup` で設定してね！",
             ephemeral=True
         )
         return
     
     panel_embed = discord.Embed(
-        title="🛒 半自動販売機",
-        description="購入したい商品を選択してください。\n"
-                   "購入後、管理者の承認を経てDMで商品をお届けします。",
+        title="半販売機",
+        description="購入したい商品を選択してね！。\n"
+                   "購入後、リンクが確認できたらDMで商品をおくります！。",
         color=0x3498db
     )
-    
-    # 商品一覧を表示
     product_list = ""
     for product_id, product in vending_machine['products'].items():
         actual_stock = len(product.get('inventory', []))
-        stock_status = f"在庫: {actual_stock}個" if actual_stock > 0 else "❌ 在庫切れ"
+        stock_status = f"在庫: {actual_stock}個" if actual_stock > 0 else "在庫切れ"
         product_list += f"**{product['name']}** - ¥{product['price']:,}\n{product['description']}\n{stock_status}\n\n"
     
     panel_embed.add_field(
-        name="📦 商品一覧",
+        name="商品一覧",
         value=product_list,
         inline=False
     )
     
-    panel_embed.set_footer(text="購入には PayPay での支払いが必要です")
+    panel_embed.set_footer(text="made by mumei")
     
     # 実績チャンネルが設定されている場合の表示
     if achievement_channel:
         panel_embed.add_field(
-            name="🏆 実績チャンネル", 
-            value=f"購入実績が {achievement_channel.mention} に自動送信されます",
+            name="実績チャンネル", 
+            value=f"購入実績が {achievement_channel.mention} に自動送信されるよ！",
             inline=False
         )
     
@@ -1928,20 +1875,20 @@ async def vending_panel_slash(
     await interaction.response.send_message(embed=panel_embed, view=view)
     print(f'{interaction.user.name} が販売機パネルを設置しました')
 
-@bot.tree.command(name='giveaway', description='ギブアウェイを作成します')
+@bot.tree.command(name='giveaway', description='giveawayを作成します！')
 @app_commands.describe(
-    prize='景品の名前',
-    winners='勝者数（1-10）',
+    prize='景品',
+    winners='人数（1-10）',
     duration='期限（例: 1w2d3h30m = 1週間2日3時間30分）'
 )
 @app_commands.default_permissions(administrator=True)
 async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: int, duration: str):
-    """ギブアウェイを作成"""
+    """giveawayを作成"""
     
     # 勝者数の範囲チェック
     if winners < 1 or winners > 10:
         await interaction.response.send_message(
-            "❌ 勝者数は1から10までの範囲で指定してください。",
+            "人数は1から10までの範囲で指定してね！",
             ephemeral=True
         )
         return
@@ -1950,8 +1897,8 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: 
     duration_seconds = parse_giveaway_duration(duration)
     if duration_seconds is None:
         await interaction.response.send_message(
-            "❌ 期限の形式が無効です。\n"
-            "正しい形式: `1w2d3h30m` (1週間2日3時間30分)\n"
+            "期限の形式が無効だよ！\n"
+            "正しい形式は: `1w2d3h30m` (1週間2日3時間30分)\n"
             "使用可能単位: w(週), d(日), h(時間), m(分)",
             ephemeral=True
         )
@@ -1960,14 +1907,14 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: 
     # 最小1分、最大4週間の制限
     if duration_seconds < 60:
         await interaction.response.send_message(
-            "❌ 最小期限は1分です。",
+            "最小期限は1分からです！。",
             ephemeral=True
         )
         return
     
     if duration_seconds > 2419200:  # 4週間
         await interaction.response.send_message(
-            "❌ 最大期限は4週間です。",
+            "最大期限は4週間です！",
             ephemeral=True
         )
         return
@@ -1977,7 +1924,7 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: 
     
     # ギブアウェイEmbedを作成
     giveaway_embed = discord.Embed(
-        title="🎉 ギブアウェイ開催中！",
+        title="ギブアウェイ開催中！",
         description=f"**景品:** {prize}\n"
                    f"**勝者数:** {winners}人\n"
                    f"**終了時刻:** {discord.utils.format_dt(end_time, style='F')}\n"
@@ -2007,128 +1954,128 @@ async def giveaway_slash(interaction: discord.Interaction, prize: str, winners: 
         interaction.user
     ))
     
-    print(f'{interaction.user.name} がギブアウェイ「{prize}」を開始しました（勝者{winners}人、期限{format_duration(duration_seconds)}）')
+    print(f'{interaction.user.name} がgiveaway「{prize}」を開始しました（勝者{winners}人、期限{format_duration(duration_seconds)}）')
 
-@bot.tree.command(name='help', description='ボットの機能一覧を表示します')
+@bot.tree.command(name='help', description='m.m.VDの機能一覧を表示します')
 async def help_slash(interaction: discord.Interaction):
     """ボットの機能一覧を表示"""
     
     # メインのヘルプEmbed
     help_embed = discord.Embed(
-        title="🤖 ボット機能一覧",
-        description="このボットの利用可能な機能をご紹介します。",
+        title="m.m.VD機能一覧",
+        description="このbotの使える機能の一覧です！。",
         color=0x3498db,
         timestamp=discord.utils.utcnow()
     )
     
     # 認証システム機能
     auth_commands = [
-        "`/role` - 認証メッセージを送信（管理者限定）",
-        "`/call` - 他サーバーの認証済みユーザーを招待（管理者限定）"
+        "`/role` - 認証メッセージを送信します！",
+        "`/call` - 他サーバーの認証済みユーザーを招待(現在使用不可)"
     ]
     help_embed.add_field(
-        name="🔐 認証システム",
+        name="認証系だよ！",
         value="\n".join(auth_commands),
         inline=False
     )
     
     # レベルシステム機能
     level_commands = [
-        "`/level [ユーザー]` - レベル情報を表示",
-        "`/ranking [ページ]` - サーバーランキングを表示"
+        "`/level [ユーザー]` - レベル情報を表示するよ！",
+        "`/ranking [ページ]` - サーバーランキングを表示するよ！"
     ]
     help_embed.add_field(
-        name="📊 レベルシステム",
+        name="レベル系統",
         value="\n".join(level_commands),
         inline=False
     )
     
-    # チャンネル管理機能
-    channel_commands = [
-        "`/nuke` - チャンネルを再生成（管理者限定）",
-        "`/timenuke <時間>` - 時間指定でチャンネル削除（管理者限定）",
-        "`/timecancel` - 定期削除をキャンセル（管理者限定）",
-        "`/delete <数> [ユーザー]` - メッセージを削除（管理者限定）"
-    ]
-    help_embed.add_field(
-        name="🛠️ チャンネル管理",
-        value="\n".join(channel_commands),
-        inline=False
-    )
+    
     
     # 販売機システム機能
     vending_commands = [
-        "`/vending_setup` - 管理者チャンネル設定（管理者限定）",
-        "`/add_product` - 商品追加（管理者限定）",
-        "`/add_inventory` - 在庫追加（管理者限定）",
-        "`/view_inventory` - 在庫確認（管理者限定）",
-        "`/vending_panel` - 販売機パネル設置（管理者限定）"
+        "`/vending_setup` - 管理者チャンネル設定できます",
+        "`/add_product` - 商品追加ができます",
+        "`/add_inventory` - 在庫追加ができます",
+        "`/view_inventory` - 在庫確認ができます",
+        "`/vending_panel` - 自販機を設置します"
     ]
     help_embed.add_field(
-        name="🛒 半自動販売機",
+        name="半自動販売機系統",
         value="\n".join(vending_commands),
         inline=False
     )
     
     # チケットシステム機能
     ticket_commands = [
-        "`/ticket_panel` - チケット作成パネル設置（管理者限定）"
+        "`/ticket_panel` - チケット作成パネル設置"
     ]
     help_embed.add_field(
         name="🎫 チケットシステム",
         value="\n".join(ticket_commands),
         inline=False
     )
+    # チャンネル管理機能
+    channel_commands = [
+        "`/nuke` - チャンネルをnukeします",
+        "`/timenuke <時間>` - 時間指定でnukeします",
+        "`/timecancel` - 定期nukeをキャンセルできます",
+        "`/delete <数> [ユーザー]` - 指定数のメッセージを削除できます"
+    ]
+    help_embed.add_field(
+        name="色々",
+        value="\n".join(channel_commands),
+        inline=False
+    )
     
     # ギブアウェイ機能
     giveaway_commands = [
-        "`/giveaway <景品> <勝者数> <期限>` - ギブアウェイを開催（管理者限定）"
+        "`/giveaway <景品> <人数> <期限>` - giveawayを開けます"
     ]
     help_embed.add_field(
-        name="🎁 ギブアウェイ",
+        name="giveaway",
         value="\n".join(giveaway_commands),
         inline=False
     )
     
     # その他の機能
     other_commands = [
-        "`/log <チャンネル> <メッセージ>` - 指定チャンネルにメッセージ送信（管理者限定）",
-        "`/help` - この機能一覧を表示"
+        "`/masquerade <チャンネル> <メッセージ>` - メッセージ送信ができます",
+        "`/help` - この機能一覧を表示します"
     ]
     help_embed.add_field(
-        name="🔧 その他",
+        name="その他",
         value="\n".join(other_commands),
         inline=False
     )
     
     # ボット情報
     help_embed.add_field(
-        name="ℹ️ ボット情報",
-        value=f"• 参加サーバー数: {len(bot.guilds)}個\n"
-              f"• 利用制限: 2週間（自動退出）\n"
-              f"• 開発者: Discord OAuth認証システム",
+        name="ボット情報",
+        value=f"参加サーバー数: {len(bot.guilds)}個\n"
+              f"利用制限: なし（無期限利用可能）",
         inline=False
     )
     
     help_embed.set_footer(
-        text="管理者限定コマンドは適切な権限が必要です",
+        text="管理者限定コマンドは権限が必要だよ！",
         icon_url=bot.user.display_avatar.url if bot.user else None
     )
     
     await interaction.response.send_message(embed=help_embed)
     print(f'{interaction.user.name} が /help コマンドを使用しました')
 
-@bot.tree.command(name='ticket_panel', description='チケット作成パネルを設置します')
+@bot.tree.command(name='ticket_panel', description='チケット作成パネルを設置します！')
 @app_commands.describe(
-    title='パネルのタイトル（省略可）',
-    description='パネルの説明文（省略可）',
-    category='チケットを作成するカテゴリ（省略可）'
+    title='パネルのタイトル',
+    description='パネルの説明文',
+    category='チケットを作成するカテゴリ'
 )
 @app_commands.default_permissions(administrator=True)
 async def ticket_panel_slash(
     interaction: discord.Interaction,
-    title: str = "サポートチケット",
-    description: str = "何かお困りのことがありましたら、下のボタンをクリックしてチケットを作成してください。",
+    title: str = "チケット",
+    description: str = "チケットを開きたい方は、下記のボタンから開いてください",
     category: discord.CategoryChannel = None
 ):
     """チケット作成パネルを設置"""
@@ -2141,7 +2088,7 @@ async def ticket_panel_slash(
     )
     
     panel_embed.add_field(
-        name="📋 使い方",
+        name="使い方",
         value="ボタンを押してね",
         inline=False
     )
@@ -2167,8 +2114,7 @@ class VendingMachineView(discord.ui.View):
                 options.append(discord.SelectOption(
                     label=f"{product['name']} - ¥{product['price']:,}",
                     value=product_id,
-                    description=product['description'][:100],
-                    emoji="📦"
+                    description=product['description'][:100]
                 ))
         
         if options:
@@ -2188,7 +2134,7 @@ class VendingMachineView(discord.ui.View):
         
         if not product:
             await interaction.response.send_message(
-                "❌ 選択された商品が見つかりません。",
+                "選択された商品が見つからないよ！。",
                 ephemeral=True
             )
             return
@@ -2197,7 +2143,7 @@ class VendingMachineView(discord.ui.View):
         inventory = product.get('inventory', [])
         if len(inventory) <= 0:
             await interaction.response.send_message(
-                "❌ この商品は在庫切れです。",
+                "この商品は在庫切れだよ！。",
                 ephemeral=True
             )
             return
@@ -2223,7 +2169,7 @@ class VendingMachineView(discord.ui.View):
         purchase_embed = discord.Embed(
             title="🛒 商品注文完了",
             description=f"**{product['name']}** の注文を受け付けました。\n"
-                       f"管理者が支払いを確認次第、DMで商品をお送りします。",
+                       f"管理者が支払いを確認次第、DMで商品を送るよ！。",
             color=0xffa500
         )
         
@@ -2233,20 +2179,20 @@ class VendingMachineView(discord.ui.View):
         
         # PayPayリンク入力モーダルを表示
         await interaction.response.send_modal(PayPayLinkModal(order_id, product, self.guild_id))
-        print(f'{interaction.user.name} が商品「{product["name"]}」を注文しました (注文ID: {order_id})')
+        print(f'{interaction.user.name} が商品「{product["name"]}」を注文しました！ (注文ID: {order_id})')
     
     async def send_admin_notification(self, channel, order_id, user, product, paypay_link):
         """管理者チャンネルに通知を送信"""
         admin_embed = discord.Embed(
             title="💰 新規注文通知",
-            description=f"新しい商品注文が入りました。",
+            description=f"新しい注文が入ったよ！。",
             color=0xff6b6b,
             timestamp=discord.utils.utcnow()
         )
         
         admin_embed.add_field(name="注文ID", value=f"#{order_id}", inline=True)
         admin_embed.add_field(name="購入者", value=f"{user.mention}\n({user.name})", inline=True)
-        admin_embed.add_field(name="商品", value=product['name'], inline=True)
+        admin_embed.add_field(name="買いたい商品", value=product['name'], inline=True)
         admin_embed.add_field(name="金額", value=f"¥{product['price']:,}", inline=True)
         admin_embed.add_field(name="PayPayリンク", value=f"[支払いリンク]({paypay_link})", inline=False)
         
@@ -2295,7 +2241,7 @@ class PayPayLinkModal(discord.ui.Modal, title='PayPay支払いリンク入力'):
         purchase_embed = discord.Embed(
             title="🛒 商品注文完了",
             description=f"**{self.product['name']}** の注文を受け付けました。\n"
-                       f"管理者が支払いを確認次第、DMで商品をお送りします。",
+                       f"管理者が確認次第、DMで商品をお送ります！",
             color=0xffa500
         )
         
@@ -2331,12 +2277,12 @@ class AdminApprovalView(discord.ui.View):
         self.order_id = str(order_id)
         self.guild_id = None  # 初期化時は不明、ボタンクリック時に設定
     
-    @discord.ui.button(label='商品送信', style=discord.ButtonStyle.success, emoji='✅')
+    @discord.ui.button(label='商品送信', style=discord.ButtonStyle.success)
     async def approve_order(self, interaction: discord.Interaction, button: discord.ui.Button):
         """注文を承認して商品を送信"""
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ この操作は管理者のみ実行できます。",
+                "この操作は管理者のみです！",
                 ephemeral=True
             )
             return
@@ -2346,38 +2292,38 @@ class AdminApprovalView(discord.ui.View):
         order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
-                "❌ 注文が見つかりません。",
+                "注文が見つかりません！",
                 ephemeral=True
             )
             return
         
         if order['status'] == 'completed':
             await interaction.response.send_message(
-                "❌ この注文は既に商品が送信済みです。重複送信はできません。",
+                "この注文は既に商品が送信済みです！",
                 ephemeral=True
             )
             return
         elif order['status'] == 'cancelled':
             await interaction.response.send_message(
-                "❌ この注文はキャンセル済みです。",
+                "この注文はキャンセルされました！",
                 ephemeral=True
             )
             return
         elif order['status'] != 'pending_payment':
             await interaction.response.send_message(
-                "❌ この注文は既に処理済みです。",
+                "この注文は既に終了しました！",
                 ephemeral=True
             )
             return
         
         await interaction.response.send_modal(ProductDeliveryModal(self.order_id))
     
-    @discord.ui.button(label='注文キャンセル', style=discord.ButtonStyle.danger, emoji='❌')
+    @discord.ui.button(label='注文キャンセル', style=discord.ButtonStyle.danger)
     async def reject_order(self, interaction: discord.Interaction, button: discord.ui.Button):
         """注文をキャンセル"""
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ この操作は管理者のみ実行できます。",
+                "この操作は管理者のみです！",
                 ephemeral=True
             )
             return
@@ -2387,7 +2333,7 @@ class AdminApprovalView(discord.ui.View):
         order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
-                "❌ 注文が見つかりません。",
+                "注文が見つからないよ！",
                 ephemeral=True
             )
             return
@@ -2400,9 +2346,9 @@ class AdminApprovalView(discord.ui.View):
             user = await bot.fetch_user(int(order['user_id']))
             if user:
                 cancel_embed = discord.Embed(
-                    title="❌ 注文キャンセル",
-                    description=f"注文 #{self.order_id} がキャンセルされました。\n"
-                               f"ご不明な点がございましたら、管理者にお問い合わせください。",
+                    title="注文キャンセル",
+                    description=f"注文 #{self.order_id} がキャンセルされたよ！\n"
+                               f"何かあったら鯖主へgo!",
                     color=0xff0000
                 )
                 await user.send(embed=cancel_embed)
@@ -2411,13 +2357,13 @@ class AdminApprovalView(discord.ui.View):
         
         # 管理者メッセージを更新
         cancel_embed = discord.Embed(
-            title="❌ 注文キャンセル完了",
-            description=f"注文 #{self.order_id} をキャンセルしました。\n実行者: {interaction.user.mention}",
+            title="注文のキャンセルが完了しました！",
+            description=f"注文 #{self.order_id} をキャンセルしました！\n実行者: {interaction.user.mention}",
             color=0xff0000
         )
         
         await interaction.response.edit_message(embed=cancel_embed, view=None)
-        print(f'{interaction.user.name} が注文 #{self.order_id} をキャンセルしました')
+        print(f'{interaction.user.name} が注文 #{self.order_id} をキャンセルしました！')
 
 class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
     def __init__(self, order_id):
@@ -2436,49 +2382,49 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             
             achievement_channel = bot.get_channel(achievement_channel_id)
             if not achievement_channel:
-                print(f"実績チャンネルが見つかりません: {achievement_channel_id}")
+                print(f"実績チャンネルが見つかりません！: {achievement_channel_id}")
                 return
             
             # 実績Embedを作成
             achievement_embed = discord.Embed(
-                title="🎉 購入実績",
+                title="購入実績",
                 description="新しい商品が購入されました！",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             
             achievement_embed.add_field(
-                name="👤 購入者",
+                name="購入者",
                 value=f"{buyer.mention}\n({buyer.display_name})",
                 inline=True
             )
             
             achievement_embed.add_field(
-                name="🛒 商品",
+                name="商品",
                 value=f"**{product['name']}**\n{product['description'][:50]}{'...' if len(product['description']) > 50 else ''}",
                 inline=True
             )
             
             achievement_embed.add_field(
-                name="💰 価格",
+                name="価格",
                 value=f"¥{product['price']:,}",
                 inline=True
             )
             
             achievement_embed.add_field(
-                name="🆔 注文ID",
+                name="注文ID",
                 value=f"#{order_id}",
                 inline=True
             )
             
             achievement_embed.add_field(
-                name="👨‍💼 処理者",
+                name="管理者 ",
                 value=f"{processor.mention}\n({processor.display_name})",
                 inline=True
             )
             
             achievement_embed.add_field(
-                name="📦 残り在庫",
+                name="残り在庫",
                 value=f"{product['stock']}個",
                 inline=True
             )
@@ -2501,7 +2447,7 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
         order = vending_machine['orders'].get(self.order_id)
         if not order:
             await interaction.response.send_message(
-                "❌ 注文が見つかりません。",
+                "注文が見つかりません！",
                 ephemeral=True
             )
             return
@@ -2510,7 +2456,7 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
         product = vending_machine['products'].get(product_id)
         if not product:
             await interaction.response.send_message(
-                "❌ 商品が見つかりません。",
+                "商品が見つかりません！",
                 ephemeral=True
             )
             return
@@ -2519,7 +2465,7 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
         inventory = product.get('inventory', [])
         if not inventory:
             await interaction.response.send_message(
-                "❌ この商品の在庫がありません。",
+                "この商品の在庫がありません！",
                 ephemeral=True
             )
             return
@@ -2538,8 +2484,8 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             user = await bot.fetch_user(int(order['user_id']))
             
             delivery_embed = discord.Embed(
-                title="📦 商品お届け",
-                description=f"ご注文いただいた商品をお届けします。",
+                title="商品お届け",
+                description=f"ご注文いただいた商品をお届けします！",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
@@ -2553,7 +2499,7 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             # 管理者メッセージを更新（ボタンを無効化）
             success_embed = discord.Embed(
                 title="✅ 商品送信完了",
-                description=f"注文 #{self.order_id} の商品を送信しました。\n"
+                description=f"注文 #{self.order_id} の商品を送信しました！\n"
                            f"実行者: {interaction.user.mention}\n"
                            f"残り在庫: {product['stock']}個\n"
                            f"ステータス: 送信完了",
@@ -2562,7 +2508,7 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             )
             
             success_embed.add_field(
-                name="📦 送信内容", 
+                name="商品内容", 
                 value=item_content[:100] + ("..." if len(item_content) > 100 else ""), 
                 inline=False
             )
@@ -2580,8 +2526,8 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             order['status'] = 'pending_payment'  # ステータスを戻す
             
             await interaction.response.send_message(
-                "❌ 購入者のDMに送信できませんでした。DMが無効になっている可能性があります。\n"
-                "在庫は元に戻されました。",
+                "dmに送信できませんでした、dmが無効の可能性があります！\n"
+                "在庫は減っていません",
                 ephemeral=True
             )
         except Exception as e:
@@ -2591,18 +2537,18 @@ class ProductDeliveryModal(discord.ui.Modal, title='商品送信'):
             order['status'] = 'pending_payment'  # ステータスを戻す
             
             await interaction.response.send_message(
-                f"❌ 商品送信中にエラーが発生しました: {str(e)}\n"
+                f"商品送信中にエラーが発生しました！: {str(e)}\n"
                 "在庫は元に戻されました。",
                 ephemeral=True
             )
-            print(f"商品送信エラー: {e}")
+            print(f"商品送信エラー！: {e}")
 
 class TicketPanelView(discord.ui.View):
     def __init__(self, category: discord.CategoryChannel = None):
         super().__init__(timeout=None)
         self.category = category
     
-    @discord.ui.button(label='チケット作成', style=discord.ButtonStyle.primary, emoji='🎫')
+    @discord.ui.button(label='チケットを作成', style=discord.ButtonStyle.primary, emoji='🎫')
     async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         """チケットチャンネルを作成"""
         guild = interaction.guild
@@ -2619,7 +2565,7 @@ class TicketPanelView(discord.ui.View):
         
         if existing_ticket:
             await interaction.response.send_message(
-                f"❌ 既にチケットチャンネル {existing_ticket.mention} が存在します。",
+                f"※ 既にチケットチャンネル {existing_ticket.mention} が存在します!",
                 ephemeral=True
             )
             return
@@ -2667,35 +2613,34 @@ class TicketPanelView(discord.ui.View):
                 name=channel_name,
                 category=self.category,
                 overwrites=overwrites,
-                topic=f"{user.display_name} のサポートチケット"
+                topic=f"{user.display_name} のチケット"
             )
             
             # チケット情報のEmbed作成
             ticket_embed = discord.Embed(
-                title="🎫 サポートチケット",
-                description=f"{user.mention} さん、サポートチケットへようこそ！\n"
-                           f"お困りのことがございましたら、こちらでお気軽にご相談ください。",
+                title="🎫 チケット",
+                description=f"{user.mention} さん、\n"
+                           f"要件を言ってお待ちください。",
                 color=0x00ff00,
                 timestamp=discord.utils.utcnow()
             )
             
             ticket_embed.add_field(
-                name="📝 チケット作成者",
+                name=" チケット作成者",
                 value=f"{user.display_name} ({user.mention})",
                 inline=True
             )
             
             ticket_embed.add_field(
-                name="🕒 作成日時",
+                name=" 作成日時",
                 value=discord.utils.format_dt(discord.utils.utcnow(), style='F'),
                 inline=True
             )
             
             ticket_embed.add_field(
-                name="ℹ️ 注意事項",
-                value="• スタッフが対応するまでお待ちください\n"
-                     "• 問題が解決したら「チケット閉じる」ボタンを押してください\n"
-                     "• 不適切な利用は禁止されています",
+                name=" 注意事項",
+                value="• スタッフがくるまでお待ちください\n"
+                     "• 間違えて開いたのであれば「チケット閉じる」ボタンを押してください\n",
                 inline=False
             )
             
@@ -2711,7 +2656,7 @@ class TicketPanelView(discord.ui.View):
             
             # 作成完了メッセージ
             await interaction.followup.send(
-                f"✅ チケットチャンネル {ticket_channel.mention} を作成しました！",
+                f"チケットチャンネル {ticket_channel.mention} を作成したよ！",
                 ephemeral=True
             )
             
@@ -2719,7 +2664,7 @@ class TicketPanelView(discord.ui.View):
             
         except Exception as e:
             await interaction.followup.send(
-                f"❌ チケット作成中にエラーが発生しました: {str(e)}",
+                f"チケット作成中にエラーが発生しました！: {str(e)}",
                 ephemeral=True
             )
             print(f"Ticket creation error: {e}")
@@ -2733,7 +2678,7 @@ class GiveawayView(discord.ui.View):
         self.host_id = host_id
         self.participants = set()  # 参加者のユーザーIDセット
     
-    @discord.ui.button(label='参加', style=discord.ButtonStyle.success, emoji='🎁')
+    @discord.ui.button(label='参加', style=discord.ButtonStyle.success)
     async def join_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
         """ギブアウェイに参加"""
         user_id = interaction.user.id
@@ -2741,7 +2686,7 @@ class GiveawayView(discord.ui.View):
         # 既に終了しているかチェック
         if discord.utils.utcnow() >= self.end_time:
             await interaction.response.send_message(
-                "❌ このギブアウェイは既に終了しています。",
+                "このgiveawayは既に終了してるよ！",
                 ephemeral=True
             )
             return
@@ -2749,7 +2694,7 @@ class GiveawayView(discord.ui.View):
         # 主催者は参加できない
         if user_id == self.host_id:
             await interaction.response.send_message(
-                "❌ 主催者は自分のギブアウェイに参加できません。",
+                "主催者は自分のgiveawayに参加できません！",
                 ephemeral=True
             )
             return
@@ -2757,7 +2702,7 @@ class GiveawayView(discord.ui.View):
         # 既に参加しているかチェック
         if user_id in self.participants:
             await interaction.response.send_message(
-                "❌ 既にこのギブアウェイに参加しています。",
+                "既にこのgiveawayに参加しています。",
                 ephemeral=True
             )
             return
@@ -2770,40 +2715,40 @@ class GiveawayView(discord.ui.View):
             title="✅ ギブアウェイ参加完了",
             description=f"**景品:** {self.prize}\n"
                        f"ギブアウェイに参加しました！\n\n"
-                       f"抽選は {discord.utils.format_dt(self.end_time, style='R')} に行われます。\n"
-                       f"幸運を祈ります！🍀",
+                       f"抽選開始は {discord.utils.format_dt(self.end_time, style='R')} です！\n"
+                       f"参加してね！",
             color=0x00ff00
         )
         
         join_embed.add_field(
-            name="📊 現在の参加者数",
+            name="現在の参加者数",
             value=f"{len(self.participants)}人",
             inline=True
         )
         
         join_embed.add_field(
-            name="🏆 勝者数",
+            name="当選数",
             value=f"{self.winners}人",
             inline=True
         )
         
         await interaction.response.send_message(embed=join_embed, ephemeral=True)
-        print(f'{interaction.user.name} がギブアウェイ「{self.prize}」に参加しました（現在{len(self.participants)}人参加）')
+        print(f'{interaction.user.name} がgiveaway「{self.prize}」に参加しました!（現在{len(self.participants)}人参加）')
     
-    @discord.ui.button(label='参加者数確認', style=discord.ButtonStyle.secondary, emoji='👥')
+    @discord.ui.button(label='参加者数確認', style=discord.ButtonStyle.secondary)
     async def check_participants(self, interaction: discord.Interaction, button: discord.ui.Button):
         """参加者数を確認"""
         remaining_time = self.end_time - discord.utils.utcnow()
         
         if remaining_time.total_seconds() <= 0:
             status = "終了済み"
-            time_info = "このギブアウェイは終了しています"
+            time_info = "このgiveawayは終了しています！"
         else:
             status = "開催中"
             time_info = f"終了まで {discord.utils.format_dt(self.end_time, style='R')}"
         
         info_embed = discord.Embed(
-            title="📊 ギブアウェイ情報",
+            title="giveaway情報",
             description=f"**景品:** {self.prize}\n"
                        f"**ステータス:** {status}\n"
                        f"**{time_info}**",
@@ -2811,25 +2756,16 @@ class GiveawayView(discord.ui.View):
         )
         
         info_embed.add_field(
-            name="👥 現在の参加者数",
+            name="参加者数",
             value=f"{len(self.participants)}人",
             inline=True
         )
         
         info_embed.add_field(
-            name="🏆 勝者数",
+            name="当選者数",
             value=f"{self.winners}人",
             inline=True
         )
-        
-        if len(self.participants) > 0:
-            win_rate = (self.winners / len(self.participants)) * 100
-            info_embed.add_field(
-                name="📈 現在の当選確率",
-                value=f"{win_rate:.1f}%",
-                inline=True
-            )
-        
         await interaction.response.send_message(embed=info_embed, ephemeral=True)
 
 class TicketManageView(discord.ui.View):
@@ -2837,27 +2773,18 @@ class TicketManageView(discord.ui.View):
         super().__init__(timeout=None)
         self.creator_id = creator_id
     
-    @discord.ui.button(label='チケット閉じる', style=discord.ButtonStyle.danger, emoji='🔒')
+    @discord.ui.button(label='チケット閉じる！', style=discord.ButtonStyle.danger, emoji='🔒')
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         """チケットを閉じる"""
         user = interaction.user
         channel = interaction.channel
         
-        # チケット作成者または管理者のみがチケットを閉じることができる
-        if (user.id != self.creator_id and 
-            not user.guild_permissions.administrator):
-            await interaction.response.send_message(
-                "❌ チケットを閉じる権限がありません。",
-                ephemeral=True
-            )
-            return
-        
         # 確認メッセージを表示
         confirm_embed = discord.Embed(
             title="⚠️ チケットを閉じる確認",
             description="このチケットを閉じますか？\n\n"
-                       "**注意:** この操作により、チケットチャンネルが削除されます。\n"
-                       "必要な情報は事前に保存してください。",
+                       "**注意:** チケットが削除されるよ！\n"
+                       "買った情報は事前に保存してください。",
             color=0xff6b6b
         )
         
@@ -2868,7 +2795,7 @@ class TicketManageView(discord.ui.View):
             ephemeral=True
         )
     
-    @discord.ui.button(label='参加者追加', style=discord.ButtonStyle.secondary, emoji='➕')
+    @discord.ui.button(label='参加者追加', style=discord.ButtonStyle.secondary)
     async def add_user_to_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         """チケットに他のユーザーを追加"""
         await interaction.response.send_modal(AddUserModal())
@@ -2878,27 +2805,19 @@ class TicketCloseConfirmView(discord.ui.View):
         super().__init__(timeout=30)
         self.creator_id = creator_id
     
-    @discord.ui.button(label='チケットを閉じる', style=discord.ButtonStyle.danger, emoji='🗑️')
+    @discord.ui.button(label='チケットを閉じる', style=discord.ButtonStyle.danger)
     async def confirm_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         """チケット閉じることを確認"""
         user = interaction.user
         channel = interaction.channel
-        
-        if (user.id != self.creator_id and 
-            not user.guild_permissions.administrator):
-            await interaction.response.send_message(
-                "❌ チケットを閉じる権限がありません。",
-                ephemeral=True
-            )
-            return
         
         await interaction.response.defer()
         
         try:
             # 閉じる前にログメッセージを送信
             close_embed = discord.Embed(
-                title="🔒 チケット閉じられました",
-                description=f"チケットが {user.mention} によって閉じられました。",
+                title="チケット閉じられました！",
+                description=f"チケットが {user.mention} によって閉じられました！",
                 color=0x95a5a6,
                 timestamp=discord.utils.utcnow()
             )
@@ -2909,21 +2828,21 @@ class TicketCloseConfirmView(discord.ui.View):
             await asyncio.sleep(5)
             await channel.delete(reason=f"チケット閉じられました - {user.name}")
             
-            print(f'{user.name} がチケットチャンネル「{channel.name}」を閉じました')
+            print(f'{user.name} がチケットチャンネル「{channel.name}」を閉じました！')
             
         except Exception as e:
             await interaction.followup.send(
-                f"❌ チケットを閉じる際にエラーが発生しました: {str(e)}",
+                f"チケットを閉じる際にエラーが発生しました！: {str(e)}",
                 ephemeral=True
             )
             print(f"Ticket close error: {e}")
     
-    @discord.ui.button(label='キャンセル', style=discord.ButtonStyle.secondary, emoji='❌')
+    @discord.ui.button(label='キャンセル', style=discord.ButtonStyle.secondary)
     async def cancel_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         """チケット閉じることをキャンセル"""
         cancel_embed = discord.Embed(
             title="キャンセル",
-            description="チケットを閉じる操作がキャンセルされました。",
+            description="チケットを閉じる操作がキャンセルされました！",
             color=0x95a5a6
         )
         await interaction.response.edit_message(embed=cancel_embed, view=None)
@@ -2934,7 +2853,7 @@ class AddUserModal(discord.ui.Modal, title='ユーザーをチケットに追加
     
     user_input = discord.ui.TextInput(
         label='ユーザーID または ユーザー名',
-        placeholder='追加するユーザーのIDまたは名前を入力してください',
+        placeholder='追加するユーザーのIDまたは名前を入力してね！',
         required=True,
         max_length=100
     )
@@ -2970,7 +2889,7 @@ class AddUserModal(discord.ui.Modal, title='ユーザーをチケットに追加
         # 既にチャンネルにアクセス権限があるかチェック
         if target_user in channel.members:
             await interaction.response.send_message(
-                f"❌ {target_user.mention} は既にこのチケットにアクセスできます。",
+                f"❌ {target_user.mention} は既にこのチケットを見れます。",
                 ephemeral=True
             )
             return
@@ -3031,12 +2950,12 @@ async def call_authenticated_users(ctx, *, message: str = None):
             # キャッシュにない場合は直接フェッチを試行
             try:
                 member = await ctx.guild.fetch_member(int(user_id))
-                print(f'フェッチで認証済みメンバーを発見: {member.display_name}')
+                print(f'認証済みメンバーを発見！: {member.display_name}')
             except discord.NotFound:
-                print(f'認証済みメンバーがサーバーから退出しています: User ID {user_id}')
+                print(f'メンバーがサーバーから退出ました！: User ID {user_id}')
                 continue
             except Exception as e:
-                print(f'メンバーフェッチエラー: {e}')
+                print(f'メンバー取得エラー: {e}')
                 continue
         
         if member:
@@ -3046,10 +2965,10 @@ async def call_authenticated_users(ctx, *, message: str = None):
     # 無効なユーザーを認証済みリストから削除
     if len(valid_users) != len(bot.authenticated_users[guild_id]):
         bot.authenticated_users[guild_id] = valid_users
-        print(f'無効なユーザーを削除しました')
+        print(f'無効なユーザーを削除しました！')
     
     if not mentions:
-        await ctx.send("認証済みユーザーがサーバーに見つかりません。")
+        await ctx.send("認証済みユーザーがサーバーに見つかりませんでした！。")
         return
     
     # メンションメッセージを作成
@@ -3068,7 +2987,7 @@ async def call_authenticated_users(ctx, *, message: str = None):
     else:
         await ctx.send(call_message)
     
-    print(f'{ctx.author.name} が {len(mentions)} 人の認証済みユーザーを呼び出しました')
+    print(f'{ctx.author.name} が {len(mentions)} 人の認証済みユーザーを呼び出しました！')
 
 @bot.command(name='nuke')
 @commands.has_permissions(administrator=True)
@@ -3078,13 +2997,9 @@ async def nuke_channel(ctx):
     
     # 確認メッセージを送信
     confirm_embed = discord.Embed(
-        title="⚠️ チャンネル再生成の確認",
-        description=f"チャンネル「{channel.name}」を再生成しますか？\n\n"
-                   "この操作により：\n"
-                   "• 現在のチャンネルは削除されます\n" 
-                   "• 同じ名前と権限で新しいチャンネルが作成されます\n"
-                   "• すべてのメッセージ履歴が削除されます\n\n"
-                   "**この操作は取り消せません！**",
+        title="nuke確認",
+        description=f"チャンネル「{channel.name}」をnukeしますか？\n\n"
+                   "nukeされます：\n",
         color=0xff0000
     )
     
@@ -3099,7 +3014,7 @@ class NukeConfirmView(discord.ui.View):
         self.author_id = author_id
         self.message = None
     
-    @discord.ui.button(label='実行', style=discord.ButtonStyle.danger, emoji='💥')
+    @discord.ui.button(label='実行', style=discord.ButtonStyle.danger)
     async def confirm_nuke(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.author_id:
             await interaction.response.send_message("このボタンはコマンド実行者のみが使用できます。", ephemeral=True)
@@ -3138,7 +3053,7 @@ class NukeConfirmView(discord.ui.View):
             # 成功メッセージを新しいチャンネルに送信
             success_embed = discord.Embed(
                 title="✅ チャンネル再生成完了",
-                description=f"チャンネル「{channel_name}」が正常に再生成されました。",
+                description=f"チャンネル「{channel_name}」がnukeされました！",
                 color=0x00ff00
             )
             await new_channel.send(embed=success_embed)
@@ -3146,26 +3061,26 @@ class NukeConfirmView(discord.ui.View):
             # 元のチャンネルを削除
             await channel.delete()
             
-            print(f'{interaction.user.name} がチャンネル「{channel_name}」を再生成しました')
+            print(f'{interaction.user.name} がチャンネル「{channel_name}」をnuke
             
         except Exception as e:
             error_embed = discord.Embed(
                 title="❌ エラー",
-                description=f"チャンネルの再生成中にエラーが発生しました：\n{str(e)}",
+                description=f"チャンネルのnuke中にエラーが発生した！開発者にれんらくしろ！！！！！れ！！！！！！：\n{str(e)}",
                 color=0xff0000
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
             print(f'Nuke command error: {e}')
     
-    @discord.ui.button(label='キャンセル', style=discord.ButtonStyle.secondary, emoji='❌')
+    @discord.ui.button(label='キャンセル', style=discord.ButtonStyle.secondary)
     async def cancel_nuke(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("このボタンはコマンド実行者のみが使用できます。", ephemeral=True)
+            await interaction.response.send_message("このボタンは実行者のみが使用できます。", ephemeral=True)
             return
         
         cancel_embed = discord.Embed(
             title="キャンセル",
-            description="チャンネルの再生成がキャンセルされました。",
+            description="nukeがキャンセルされました、もう一回やってね",
             color=0x808080
         )
         await interaction.response.edit_message(embed=cancel_embed, view=None)
@@ -3174,7 +3089,7 @@ class NukeConfirmView(discord.ui.View):
         if self.message:
             timeout_embed = discord.Embed(
                 title="タイムアウト",
-                description="確認がタイムアウトしました。チャンネルの再生成はキャンセルされました。",
+                description="時間かかりすぎ！自動キャンセルだよ！！！！！！！！れ！！！！！！",
                 color=0x808080
             )
             try:
