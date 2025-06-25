@@ -22,15 +22,8 @@ DISCORD_REDIRECT_URI = os.getenv('DISCORD_REDIRECT_URI')
 RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL')
 
 # Render環境での設定
-if RENDER_EXTERNAL_URL:
-    BASE_URL = RENDER_EXTERNAL_URL
-    REDIRECT_URI = f"{RENDER_EXTERNAL_URL}/callback"
-elif DISCORD_REDIRECT_URI:
-    REDIRECT_URI = DISCORD_REDIRECT_URI
-    BASE_URL = REDIRECT_URI.replace('/callback', '')
-else:
-    REDIRECT_URI = 'http://0.0.0.0:10000/callback'
-    BASE_URL = "http://0.0.0.0:10000"
+REDIRECT_URI = 'https://m-m-free-vd.onrender.com/callback'
+BASE_URL = "https://m-m-free-vd.onrender.com"
 OAUTH_URL_BASE = 'https://discord.com/api/oauth2/authorize'
 TOKEN_URL = 'https://discord.com/api/oauth2/token'
 USER_URL = 'https://discord.com/api/users/@me'
