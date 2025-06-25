@@ -64,6 +64,9 @@ class OAuthBot(commands.Bot):
         self.vending_machines = {}  # {guild_id: {'products': {}, 'orders': {}, 'admin_channels': set(), 'next_order_id': 1}}
 
     async def on_ready(self):
+        # ボット開始時刻を記録
+        self.start_time = time.time()
+        
         print(f'{self.user} がログインしました！')
         print(f'参加しているサーバー: {len(self.guilds)}個')
         print(f'RENDER_EXTERNAL_URL: {RENDER_EXTERNAL_URL}')
@@ -360,6 +363,12 @@ class OAuthBot(commands.Bot):
         app = web.Application()
         app.router.add_get('/auth', self.handle_auth_request)
         app.router.add_get('/callback', self.handle_oauth_callback)
+        
+        # UptimeRobot用のヘルスチェックエンドポイント
+        app.router.add_get('/', self.handle_health_check)
+        app.router.add_get('/health', self.handle_health_check)
+        app.router.add_get('/ping', self.handle_health_check)
+        app.router.add_get('/status', self.handle_status_check)
 
         runner = web.AppRunner(app)
         await runner.setup()
@@ -412,6 +421,46 @@ class OAuthBot(commands.Bot):
         '''
 
         return web.Response(text=html, content_type='text/html')
+
+    async def handle_health_check(self, request):
+        """UptimeRobot用のヘルスチェックエンドポイント"""
+        from aiohttp import web
+        
+        # ボットの状態を確認
+        if self.is_ready():
+            return web.Response(
+                text="OK - Bot is online and ready", 
+                status=200,
+                content_type='text/plain'
+            )
+        else:
+            return web.Response(
+                text="Bot is not ready", 
+                status=503,
+                content_type='text/plain'
+            )
+
+    async def handle_status_check(self, request):
+        """詳細なステータス情報を返すエンドポイント"""
+        from aiohttp import web
+        import json
+        
+        status_data = {
+            "status": "online" if self.is_ready() else "offline",
+            "guilds_count": len(self.guilds),
+            "user": {
+                "name": self.user.name if self.user else None,
+                "id": self.user.id if self.user else None
+            },
+            "uptime": time.time() - getattr(self, 'start_time', time.time()),
+            "timestamp": time.time()
+        }
+        
+        return web.Response(
+            text=json.dumps(status_data, indent=2),
+            status=200,
+            content_type='application/json'
+        )
 
     async def handle_oauth_callback(self, request):
         from aiohttp import web
