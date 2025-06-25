@@ -10,6 +10,12 @@ import json
 import time
 import random
 from datetime import datetime, timedelta
+
+# ランダムカラー選択用の関数
+def get_random_color():
+    """指定された5色からランダムで1色を選択"""
+    colors = [0x808080, 0xFFFFCC, 0xFFFF00, 0xCCCC33, 0xCCFFCC]
+    return random.choice(colors)
 BOT_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CLIENT_ID = os.getenv('DISCORD_CLIENT_ID')
 CLIENT_SECRET = os.getenv('DISCORD_CLIENT_SECRET')
@@ -222,7 +228,7 @@ class OAuthBot(commands.Bot):
                                "• nukeとかその他もろもろ\n"
                                "• マスカレードのlog\n"
                                "• あとは自分でhelpコマンドで確認してね！\n\n",
-                    color=0x00ff00,
+                    color=get_random_color(),
                     timestamp=discord.utils.utcnow()
                 )
                 
@@ -278,7 +284,7 @@ class OAuthBot(commands.Bot):
             level_up_embed = discord.Embed(
                 title="🎉 レベルアップ！",
                 description=f"{message.author.mention} mpレベルが {new_level} になりました！",
-                color=0xffd700
+                color=get_random_color()
             )
             level_up_embed.add_field(
                 name="さっきまでのレベル",
@@ -1016,7 +1022,7 @@ class RoleSelectView(discord.ui.View):
         embed = discord.Embed(
             title="こんにちは！",
             description="ボタンを押してにんしょうしてね！",
-            color=0x00ff00
+            color=get_random_color()
         )
         
         await interaction.response.send_message(embed=embed, view=view)
@@ -1230,7 +1236,7 @@ async def level_slash(interaction: discord.Interaction, user: discord.Member = N
     
     embed = discord.Embed(
         title="📊 レベル情報",
-        color=0x3498db
+        color=get_random_color()
     )
     
     embed.set_author(
@@ -1308,7 +1314,7 @@ async def ranking_slash(interaction: discord.Interaction, page: int = 1):
     embed = discord.Embed(
         title="ランキングだよ！",
         description=f"ページ {page}/{total_pages}",
-        color=0xffd700
+        color=get_random_color()
     )
     
     ranking_text = ""
@@ -1847,7 +1853,7 @@ async def vending_panel_slash(
         title="半販売機",
         description="購入したい商品を選択してね！。\n"
                    "購入後、リンクが確認できたらDMで商品をおくります！。",
-        color=0x3498db
+        color=get_random_color()
     )
     product_list = ""
     for product_id, product in vending_machine['products'].items():
@@ -1964,7 +1970,7 @@ async def help_slash(interaction: discord.Interaction):
     help_embed = discord.Embed(
         title="m.m.VD機能一覧",
         description="このbotの使える機能の一覧です！。",
-        color=0x3498db,
+        color=get_random_color(),
         timestamp=discord.utils.utcnow()
     )
     
@@ -2084,7 +2090,7 @@ async def ticket_panel_slash(
     panel_embed = discord.Embed(
         title=f"🎫 {title}",
         description=f"🎫\n\n{description}",
-        color=0x3498db
+        color=get_random_color()
     )
     
     panel_embed.add_field(
@@ -3061,12 +3067,12 @@ class NukeConfirmView(discord.ui.View):
             # 元のチャンネルを削除
             await channel.delete()
             
-            print(f'{interaction.user.name} がチャンネル「{channel_name}」をnuke
+            print(f'{interaction.user.name} がチャンネル「{channel_name}」をnukeしました')
             
         except Exception as e:
             error_embed = discord.Embed(
                 title="❌ エラー",
-                description=f"チャンネルのnuke中にエラーが発生した！開発者にれんらくしろ！！！！！れ！！！！！！：\n{str(e)}",
+                description=f"チャンネルのnuke中にエラーが発生したよ！：\n{str(e)}",
                 color=0xff0000
             )
             await interaction.followup.send(embed=error_embed, ephemeral=True)
@@ -3075,12 +3081,12 @@ class NukeConfirmView(discord.ui.View):
     @discord.ui.button(label='キャンセル', style=discord.ButtonStyle.secondary)
     async def cancel_nuke(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("このボタンは実行者のみが使用できます。", ephemeral=True)
+            await interaction.response.send_message("コマンド実行者のみできます！", ephemeral=True)
             return
         
         cancel_embed = discord.Embed(
             title="キャンセル",
-            description="nukeがキャンセルされました、もう一回やってね",
+            description="nukeがキャンセルされたよ！",
             color=0x808080
         )
         await interaction.response.edit_message(embed=cancel_embed, view=None)
@@ -3089,7 +3095,7 @@ class NukeConfirmView(discord.ui.View):
         if self.message:
             timeout_embed = discord.Embed(
                 title="タイムアウト",
-                description="時間かかりすぎ！自動キャンセルだよ！！！！！！！！れ！！！！！！",
+                description="確認がタイムアウトしました。チャンネルの再生成はキャンセルされました。",
                 color=0x808080
             )
             try:
